@@ -1,14 +1,6 @@
 import { maskEmail } from '@mail/core';
-import { buildSesEvent } from '../app/ses-events.js';
-import type { SesEventType } from '../app/ses-events.js';
+import { FEEDBACK_TYPES, simulateFeedback } from '../ops/feedback.js';
 import { applyLocalDefaults, localContext, main, parseArgs, stringArg } from './local.js';
-
-const TYPES: Readonly<Record<string, SesEventType>> = {
-  bounce: 'Bounce',
-  complaint: 'Complaint',
-  delivery: 'Delivery',
-  reject: 'Reject',
-};
 
 const USAGE =
   'usage: feedback -- --type bounce|complaint|delivery|reject --email <address> [--delivery-id <id>] [--transient]';
@@ -20,19 +12,22 @@ await main(async () => {
     'delivery-id': 'string',
     transient: 'boolean',
   });
-  const type = TYPES[stringArg(args, 'type') ?? ''];
+  const type = stringArg(args, 'type') ?? '';
   const email = stringArg(args, 'email');
-  if (!type || !email) throw new Error(USAGE);
+  if (!FEEDBACK_TYPES[type] || !email) throw new Error(USAGE);
 
   applyLocalDefaults('feedback');
+  // Dynamic only for our own handler module: it reads the environment set above when first used.
   const { handler } = await import('../handlers/feedback.js');
-  const event = buildSesEvent({
-    type,
-    email,
-    deliveryId: stringArg(args, 'delivery-id'),
-    bounceType: args.transient ? 'Transient' : 'Permanent',
-  });
-  const result = await handler(event, localContext('feedback', 30_000));
+  const result = await simulateFeedback(
+    (event) => handler(event, localContext('feedback', 30_000)),
+    {
+      type,
+      email,
+      deliveryId: stringArg(args, 'delivery-id'),
+      transient: args.transient === true,
+    },
+  );
   console.log(JSON.stringify({ email: maskEmail(email), ...result }));
   return 0;
 });

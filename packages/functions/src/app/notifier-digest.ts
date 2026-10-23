@@ -51,6 +51,8 @@ export interface DigestRunResult {
   /** Due users not started because the deadline was near; a re-run picks them up. */
   remaining: number;
   invalidSubscriptions: number;
+  /** E-mails queued, counting every part of a split digest. */
+  messages: number;
 }
 
 type UserOutcome = 'queued' | 'alreadyDelivered' | 'nothingPending' | 'failed';
@@ -77,7 +79,7 @@ export function createNotifierDigest(deps: NotifierDigestDeps) {
     subscription: Subscription,
     localDate: string,
     now: Date,
-  ): Promise<UserOutcome> {
+  ): Promise<{ outcome: UserOutcome; messages: number }> {
     const { userId } = subscription;
     const singleId = digestDeliveryId(userId, localDate);
     const ref = { userId, deliveryId: singleId, localDate };
@@ -85,11 +87,11 @@ export function createNotifierDigest(deps: NotifierDigestDeps) {
     const firstPartId = digestDeliveryId(userId, localDate, { index: 1, total: 2 });
     if ((await deps.deliveries.get(singleId)) ?? (await deps.deliveries.get(firstPartId))) {
       // Items that arrived after today's digest stay pending for tomorrow.
-      return 'alreadyDelivered';
+      return { outcome: 'alreadyDelivered', messages: 0 };
     }
     const { items, invalid } = await deps.pendingDigest.listForUser(userId);
     if (invalid > 0) log.warn('pending-digest rows failed validation', { ...ref, invalid });
-    if (items.length === 0) return 'nothingPending';
+    if (items.length === 0) return { outcome: 'nothingPending', messages: 0 };
 
     const messages = planDigest(subscription, localDate, now, items);
     for (const message of messages) {
@@ -116,7 +118,7 @@ export function createNotifierDigest(deps: NotifierDigestDeps) {
         error: describeError(error),
       });
     }
-    return 'queued';
+    return { outcome: 'queued', messages: messages.length };
   }
 
   /**
@@ -219,6 +221,7 @@ export function createNotifierDigest(deps: NotifierDigestDeps) {
         nothingPending: 0,
         failed: 0,
         remaining: 0,
+        messages: 0,
         invalidSubscriptions: invalid,
       };
 
@@ -236,7 +239,9 @@ export function createNotifierDigest(deps: NotifierDigestDeps) {
           cursor += 1;
           if (!next) return;
           try {
-            result[await digestFor(next.subscription, next.localDate, now)] += 1;
+            const done = await digestFor(next.subscription, next.localDate, now);
+            result[done.outcome] += 1;
+            result.messages += done.messages;
           } catch (error) {
             result.failed += 1;
             log.error('digest failed for user', error, { userId: next.subscription.userId });

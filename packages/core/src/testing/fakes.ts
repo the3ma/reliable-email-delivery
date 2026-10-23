@@ -2,6 +2,7 @@ import { DeliveryStatus } from '../deliveries.js';
 import type {
   ClaimRequest,
   Completion,
+  DeliveryMeta,
   DeliveriesStore,
   DeliveryRecord,
   LeaseRef,
@@ -17,6 +18,16 @@ import type {
 } from '../suppression.js';
 import type { ToggleSource } from '../toggles.js';
 import type { MailTransport, OutgoingEmail, SendResult } from '../transport.js';
+
+function metaOf(record: DeliveryRecord | undefined): Partial<DeliveryMeta> {
+  if (!record) return {};
+  const meta: Partial<DeliveryMeta> = {};
+  if (record.userId !== undefined) meta.userId = record.userId;
+  if (record.category !== undefined) meta.category = record.category;
+  if (record.kind !== undefined) meta.kind = record.kind;
+  if (record.toMasked !== undefined) meta.toMasked = record.toMasked;
+  return meta;
+}
 
 /** In-memory twin of DynamoDeliveriesStore with identical conditional semantics. */
 export class InMemoryDeliveriesStore implements DeliveriesStore {
@@ -43,6 +54,8 @@ export class InMemoryDeliveriesStore implements DeliveriesStore {
       leaseUntil: request.leaseUntil,
       updatedAt: request.now.toISOString(),
       expiresAt: request.expiresAt,
+      ...metaOf(existing),
+      ...(request.meta ?? {}),
     };
     this.items.set(request.deliveryId, record);
     return Promise.resolve(true);
@@ -95,7 +108,13 @@ export class InMemoryDeliveriesStore implements DeliveriesStore {
     return Promise.resolve(true);
   }
 
-  skip(deliveryId: string, reason: string, now: Date, expiresAt: number): Promise<boolean> {
+  skip(
+    deliveryId: string,
+    reason: string,
+    now: Date,
+    expiresAt: number,
+    meta?: DeliveryMeta,
+  ): Promise<boolean> {
     this.maybeFail('skip');
     const existing = this.items.get(deliveryId);
     if (existing && existing.status !== DeliveryStatus.RELEASED) return Promise.resolve(false);
@@ -106,6 +125,8 @@ export class InMemoryDeliveriesStore implements DeliveriesStore {
       reason,
       updatedAt: now.toISOString(),
       expiresAt,
+      ...metaOf(existing),
+      ...(meta ?? {}),
     });
     return Promise.resolve(true);
   }

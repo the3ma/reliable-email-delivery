@@ -20,6 +20,7 @@ suppression, fail-safe kill switches and PII-free logs.
 [What it does](#what-it-does) ·
 [Architecture](#architecture) ·
 [Quick start](#quick-start) ·
+[Delivery Console](#delivery-console) ·
 [How it works](#how-it-works) ·
 [Deployment](#deployment) ·
 [What is verified](#what-is-verified) ·
@@ -87,13 +88,14 @@ flowchart LR
   SSM["SSM toggles"] -.-> P
 ```
 
-| Component      | Path                                       | Stack                                                                                                                                             |
-| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core           | [`packages/core`](packages/core)           | schemas, delivery ids, claim state machine, error classification, redaction, item budget, toggles, renderer, AWS + SMTP adapters, in-memory fakes |
-| Functions      | [`packages/functions`](packages/functions) | `notifier-immediate`, `notifier-digest`, `processor`, `feedback` (Node 22, Powertools, esbuild) + local workers and CLIs                          |
-| Templates      | [`templates`](templates)                   | report ready, invoice failed, daily digest - subject, text and HTML                                                                               |
-| Infrastructure | [`infra`](infra)                           | AWS CDK v2: EventBridge, SQS + DLQs, DynamoDB, Scheduler, SES configuration set, KMS, SSM, alarms, dashboard; cdk-nag                             |
-| Local stack    | [`docker-compose.yml`](docker-compose.yml) | LocalStack (EventBridge, SQS, DynamoDB, SSM), Mailpit for SES                                                                                     |
+| Component        | Path                                                         | Stack                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core             | [`packages/core`](packages/core)                             | schemas, delivery ids, claim state machine, error classification, redaction, item budget, toggles, renderer, AWS + SMTP adapters, in-memory fakes |
+| Functions        | [`packages/functions`](packages/functions)                   | `notifier-immediate`, `notifier-digest`, `processor`, `feedback` (Node 22, Powertools, esbuild) + local workers and CLIs                          |
+| Templates        | [`templates`](templates)                                     | report ready, invoice failed, daily digest - subject, text and HTML                                                                               |
+| Infrastructure   | [`infra`](infra)                                             | AWS CDK v2: EventBridge, SQS + DLQs, DynamoDB, Scheduler, SES configuration set, KMS, SSM, alarms, dashboard; cdk-nag                             |
+| Delivery Console | [`web`](web), [`packages/console-api`](packages/console-api) | local demo UI: React 19 + Vite, Hono API over LocalStack and Mailpit                                                                              |
+| Local stack      | [`docker-compose.yml`](docker-compose.yml)                   | LocalStack (EventBridge, SQS, DynamoDB, SSM), Mailpit for SES                                                                                     |
 
 ## Quick start
 
@@ -108,6 +110,26 @@ make smoke   # publish -> dedup -> suppression -> digest -> kill switch -> bounc
 ```
 
 Open http://localhost:8025 to see every e-mail. More in [docs/03-running-locally.md](docs/03-running-locally.md).
+
+## Delivery Console
+
+A local demo UI that makes the guarantees visible - run a scenario, watch the deliveries move through
+their states, open the e-mail it produced. It runs only against the local stack (LocalStack +
+Mailpit) and is never deployed; in AWS the same facts live in DynamoDB, CloudWatch and SES.
+
+```bash
+make demo    # everything + the console on http://localhost:8080 (Mailpit stays on :8025)
+```
+
+|                                                                                                                                                                                                     |                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **Scenarios** - one click each, with the expected outcome next to the observed one. Here the old system's failure, _the same 10 notifications published 12 times concurrently_: exactly 10 e-mails. | ![Scenarios](docs/screenshots/02-scenarios.png)   |
+| **Deliveries** - every delivery id with its state timeline. An `AMBIGUOUS` delivery explains itself: the lease expired mid-send, so it is not resent and an alarm fires.                            | ![Deliveries](docs/screenshots/03-deliveries.png) |
+| **Mailbox** - the local e-mail viewer. HTML is rendered in a fully sandboxed iframe (no scripts, forms or remote content); each e-mail links back to its delivery. A large digest arrives in parts. | ![Mailbox](docs/screenshots/04-mailbox.png)       |
+
+More: [dashboard](docs/screenshots/01-dashboard.png), [suppressions](docs/screenshots/05-suppressions.png),
+[mobile, dark](docs/screenshots/06-mobile-dark.png). The console's API and pages are specified in
+[docs/CONSOLE.md](docs/CONSOLE.md); `npm run dev:mock` in `web/` runs the UI with no backend at all.
 
 ## How it works
 
@@ -203,6 +225,7 @@ month comes to roughly $15-25 at us-east-1 list prices.
 | [02 - The solution](docs/02-the-solution.md)             | mechanism by problem, runtime view, local vs AWS                          |
 | [03 - Running locally](docs/03-running-locally.md)       | stack, smoke test, troubleshooting                                        |
 | [04 - Operations runbook](docs/04-operations-runbook.md) | kill switch, DLQ redrive, ambiguous deliveries, bounce spikes, going live |
+| [Console](docs/CONSOLE.md)                               | the local demo UI: API, scenarios, pages                                  |
 | [Contract](docs/CONTRACT.md)                             | messages, tables, states, toggles, env vars, metrics                      |
 | [ADRs](docs/adr)                                         | the six design decisions                                                  |
 | [infra/README.md](infra/README.md)                       | stack, context flags, alarms, costs, cdk-nag suppressions                 |

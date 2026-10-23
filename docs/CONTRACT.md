@@ -85,13 +85,13 @@ The processor never renders; the notifier never calls SES.
 
 ## 4. Tables (DynamoDB, on-demand, customer-managed KMS key, PITR on)
 
-| Table            | Key                                               | Other                                                                                                                                                                                                                      | Writer              |
-| ---------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `subscriptions`  | PK `userId`                                       | `email`, `timezone` (IANA), `locale`, `immediate: string[]` (categories), `digest: string[]`, `segment` (0-15, = stable hash of userId mod 16), GSI `by-segment` (PK `segment` Number, SK `userId` String, projection ALL) | seed / product      |
-| `pending-digest` | PK `userId`, SK `sk` = `<occurredAt>#<requestId>` | `category`, `entityId`, `data`, `segment`, TTL `expiresAt` (14 d); GSI `by-segment` (PK `segment`, SK `userId`)                                                                                                            | notifier-immediate  |
-| `deliveries`     | PK `deliveryId`                                   | state machine (section 5), `leaseUntil` (epoch s), `attempts`, `sesMessageId`, `updatedAt`, TTL `expiresAt` (400 d)                                                                                                        | processor           |
-| `delivery-log`   | PK `deliveryId`, SK `sk` = `<at>#<event>`         | one item per event (claimed, sent, skipped, failed, ambiguous, bounced...), `details` (redacted), item budget 380 KB, TTL `expiresAt` (90 d)                                                                               | processor, feedback |
-| `suppressions`   | PK `emailHash` (sha256 of lower-cased address)    | `reason` (bounce_permanent / complaint / manual), `source`, `createdAt`, `lastEventAt`, no TTL                                                                                                                             | feedback            |
+| Table            | Key                                               | Other                                                                                                                                                                                                                                    | Writer              |
+| ---------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `subscriptions`  | PK `userId`                                       | `email`, `timezone` (IANA), `locale`, `immediate: string[]` (categories), `digest: string[]`, `segment` (0-15, = stable hash of userId mod 16), GSI `by-segment` (PK `segment` Number, SK `userId` String, projection ALL)               | seed / product      |
+| `pending-digest` | PK `userId`, SK `sk` = `<occurredAt>#<requestId>` | `category`, `entityId`, `data`, `segment`, TTL `expiresAt` (14 d); GSI `by-segment` (PK `segment`, SK `userId`)                                                                                                                          | notifier-immediate  |
+| `deliveries`     | PK `deliveryId`                                   | state machine (section 5), `leaseUntil` (epoch s), `leaseOwner`, `attempts`, `sesMessageId`, `reason`, `updatedAt`, TTL `expiresAt` (400 d); written with the claim/skip: `userId`, `category`, `kind`, `toMasked` (masked address only) | processor           |
+| `delivery-log`   | PK `deliveryId`, SK `sk` = `<at>#<event>`         | one item per event (claimed, sent, skipped, failed, ambiguous, bounced...), `details` (redacted), item budget 380 KB, TTL `expiresAt` (90 d)                                                                                             | processor, feedback |
+| `suppressions`   | PK `emailHash` (sha256 of lower-cased address)    | `reason` (bounce_permanent / complaint / manual), `source`, `createdAt`, `lastEventAt`, no TTL                                                                                                                                           | feedback            |
 
 E-mail addresses are stored only in `subscriptions` and inside SES; everywhere else (suppressions,
 logs, metrics) they appear as a hash or masked (`a***@example.test`).
@@ -166,7 +166,7 @@ Per SQS record, sequentially, batch size 10, `reportBatchItemFailures`:
 ## 7. Toggles and config
 
 SSM parameters under `/<prefix>/email/` (String): `send-emails` (`enabled`|`disabled`),
-`record-deliveries` (`enabled`|`disabled`). Read with `GetParametersByPath`, cached 5 min; on refresh
+`record-deliveries` (`enabled`|`disabled`). Read with `GetParametersByPath`, cached 5 min (`TOGGLE_CACHE_TTL_SECONDS`, default 300; the local demo uses a few seconds); on refresh
 error serve the stale cache; with no cache at all -> treat as `disabled` (fail safe, not fail open).
 Deploy-time hard switch: env `SENDING_HARD_DISABLED` - anything except the literal `false` disables
 sending.
@@ -187,6 +187,7 @@ sending.
 | `SEGMENTS`                                                                                                    | digest     | `16`                      | `16`                                           |
 | `DIGEST_WINDOW_START_HOUR` / `DIGEST_WINDOW_END_HOUR`                                                         | digest     | `6` / `10` (default)      | same                                           |
 | `DIGEST_CONCURRENCY`                                                                                          | digest     | `8` (default)             | same                                           |
+| `TOGGLE_CACHE_TTL_SECONDS`                                                                                    | processor  | `300` (default)           | `5` in the demo profile                        |
 | `CHECK_SES_SUPPRESSION_LIST`                                                                                  | processor  | unset (= check, ses only) | n/a (smtp)                                     |
 | `INTAKE_QUEUE_URL`, `EVENT_BUS_NAME`                                                                          | local CLIs | -                         | resolved from `intake` / `app-events` if unset |
 | `AWS_ENDPOINT_URL`                                                                                            | all        | unset                     | `http://localstack:4566`                       |

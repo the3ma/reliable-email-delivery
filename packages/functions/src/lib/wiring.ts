@@ -63,6 +63,7 @@ export function toggleCache(tracer: Tracer, log: SafeLog): ToggleCache {
     requireEnv('SSM_PREFIX'),
   );
   return new ToggleCache(source, {
+    ttlMs: toggleCacheTtlSeconds() * 1000,
     onRefreshError: (error, servingStale) => {
       log.warn(
         servingStale
@@ -74,4 +75,14 @@ export function toggleCache(tracer: Tracer, log: SafeLog): ToggleCache {
       );
     },
   });
+}
+
+/**
+ * TOGGLE_CACHE_TTL_SECONDS (default 300, the contract's 5 minutes). The local demo sets a few
+ * seconds so a kill-switch flip shows up quickly; it is the only supported way to change it.
+ */
+export function toggleCacheTtlSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const seconds = intEnv('TOGGLE_CACHE_TTL_SECONDS', 300, env);
+  if (seconds < 0 || seconds > 3600) throw new Error('TOGGLE_CACHE_TTL_SECONDS must be 0..3600');
+  return seconds;
 }

@@ -19,7 +19,16 @@ export const TERMINAL_STATUSES: readonly DeliveryStatus[] = [
 export const LEASE_SECONDS = 120;
 export const DELIVERY_RETENTION_DAYS = 400;
 
-export interface DeliveryRecord {
+/** Descriptive, non-secret fields written with the claim or skip so a delivery can be listed. */
+export interface DeliveryMeta {
+  userId: string;
+  category: string;
+  kind: 'immediate' | 'digest';
+  /** Masked recipient (`a***@example.test`), never the address itself. */
+  toMasked: string;
+}
+
+export interface DeliveryRecord extends Partial<DeliveryMeta> {
   deliveryId: string;
   status: DeliveryStatus;
   attempts: number;
@@ -37,6 +46,7 @@ export interface ClaimRequest {
   leaseUntil: number;
   now: Date;
   expiresAt: number;
+  meta?: DeliveryMeta;
 }
 
 export interface LeaseRef {
@@ -64,7 +74,13 @@ export interface DeliveriesStore {
   /** CLAIMED(owner) -> SENT | FAILED_PERMANENT | RELEASED (attempts + 1). */
   complete(deliveryId: string, owner: string, now: Date, completion: Completion): Promise<boolean>;
   /** (absent | RELEASED) -> SKIPPED(reason). */
-  skip(deliveryId: string, reason: string, now: Date, expiresAt: number): Promise<boolean>;
+  skip(
+    deliveryId: string,
+    reason: string,
+    now: Date,
+    expiresAt: number,
+    meta?: DeliveryMeta,
+  ): Promise<boolean>;
 }
 
 export type ClaimOutcome =
@@ -87,6 +103,7 @@ export interface ClaimOptions {
   owner: string;
   now: Date;
   leaseSeconds?: number;
+  meta?: DeliveryMeta;
 }
 
 /**
@@ -105,6 +122,7 @@ export async function claimDelivery(
     leaseUntil,
     now: options.now,
     expiresAt: retentionExpiry(options.now),
+    ...(options.meta ? { meta: options.meta } : {}),
   });
   if (claimed) return { kind: 'claimed', leaseUntil };
 

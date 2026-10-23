@@ -8,6 +8,7 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/functions/package.json packages/functions/
+COPY packages/console-api/package.json packages/console-api/
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY scripts ./scripts
 COPY templates ./templates
@@ -21,6 +22,7 @@ ENV NODE_ENV=production \
     NPM_CONFIG_FUND=false
 WORKDIR /app
 COPY --from=build --chown=node:node /src/dist/image ./
+EXPOSE 3001
 USER node
 ENTRYPOINT ["npm", "run", "--silent"]
 CMD ["worker-processor"]

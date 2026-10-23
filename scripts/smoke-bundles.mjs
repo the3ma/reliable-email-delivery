@@ -78,6 +78,64 @@ for (const [cli, args, expected, stopAfterMs] of CASES) {
   }
 }
 
+// console-api: refuses to start without AWS_ENDPOINT_URL; with it, serves /health (503: nothing is up).
+{
+  const noEndpoint = { ...env };
+  delete noEndpoint.AWS_ENDPOINT_URL;
+  const refused = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [join(image, 'cli', 'console-api.mjs')], {
+      cwd: image,
+      env: noEndpoint,
+    });
+    let output = '';
+    child.stderr.on('data', (chunk) => (output += chunk));
+    child.stdout.on('data', (chunk) => (output += chunk));
+    const timer = setTimeout(() => child.kill('SIGTERM'), 20_000);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, output });
+    });
+  });
+  if (
+    refused.code !== 0 &&
+    /AWS_ENDPOINT_URL is not set/.test(refused.output) &&
+    !INTEROP.test(refused.output)
+  ) {
+    console.log('ok   console-api refuses to start without AWS_ENDPOINT_URL');
+  } else {
+    failures += 1;
+    console.error(`FAIL console-api without AWS_ENDPOINT_URL: exit ${refused.code}
+${refused.output.slice(-1500)}`);
+  }
+
+  const port = 39_000 + Math.floor(Math.random() * 1000);
+  const child = spawn(process.execPath, [join(image, 'cli', 'console-api.mjs')], {
+    cwd: image,
+    env: { ...env, PORT: String(port), HOST: '127.0.0.1', MAILPIT_URL: 'http://127.0.0.1:9' },
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => (output += chunk));
+  child.stderr.on('data', (chunk) => (output += chunk));
+  let health;
+  for (let attempt = 0; attempt < 60 && !health; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
+      health = { status: response.status, body: await response.json() };
+    } catch {
+      // not listening yet
+    }
+  }
+  child.kill('SIGTERM');
+  if (health?.status === 503 && health.body?.checks?.mailpit === 'down' && !INTEROP.test(output)) {
+    console.log('ok   console-api serves /api/v1/health');
+  } else {
+    failures += 1;
+    console.error(`FAIL console-api health: ${JSON.stringify(health)}
+${output.slice(-1500)}`);
+  }
+}
+
 // Lambda bundles: load like the Lambda runtime (CommonJS) and invoke with a record that needs no AWS.
 const require = createRequire(import.meta.url);
 Object.assign(process.env, env, {

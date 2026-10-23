@@ -109,6 +109,18 @@ describe('processor: happy path', () => {
     expect(telemetry.flushes).toBe(1);
   });
 
+  it('stores descriptive, masked meta with the claim (for listing deliveries)', async () => {
+    const { run, deliveries } = setup();
+    await run(sqsEvent(message()), context());
+    expect(deliveries.items.get(ID)).toMatchObject({
+      userId: 'u-123',
+      category: 'report_ready',
+      kind: 'immediate',
+      toMasked: 'a***@example.test',
+    });
+    expect(JSON.stringify(deliveries.items.get(ID))).not.toContain(TO);
+  });
+
   it('uses the invocation request id as the lease owner', async () => {
     const { run, deliveries } = setup();
     const complete = vi.fn(deliveries.complete.bind(deliveries));

@@ -11,6 +11,12 @@ const dist = join(root, 'dist');
 
 const HANDLERS = ['notifier-immediate', 'notifier-digest', 'processor', 'feedback'];
 const CLIS = ['worker-immediate', 'worker-processor', 'digest', 'seed', 'publish', 'feedback'];
+// Local demo API (docs/CONSOLE.md), shipped in the same image: `docker run <img> console-api`.
+const CONSOLE_API = join(root, 'packages', 'console-api', 'src', 'main.ts');
+const ENTRIES = {
+  ...Object.fromEntries(CLIS.map((name) => [name, join(src, 'cli', `${name}.ts`)])),
+  'console-api': CONSOLE_API,
+};
 
 const common = {
   bundle: true,
@@ -37,7 +43,7 @@ await build({
 
 await build({
   ...common,
-  entryPoints: Object.fromEntries(CLIS.map((name) => [name, join(src, 'cli', `${name}.ts`)])),
+  entryPoints: ENTRIES,
   outdir: join(dist, 'image', 'cli'),
   format: 'esm',
   outExtension: { '.js': '.mjs' },
@@ -50,7 +56,7 @@ await build({
 });
 
 const scripts = Object.fromEntries(
-  CLIS.map((name) => [name, `exec node --enable-source-maps cli/${name}.mjs`]),
+  Object.keys(ENTRIES).map((name) => [name, `exec node --enable-source-maps cli/${name}.mjs`]),
 );
 await mkdir(join(dist, 'image'), { recursive: true });
 await writeFile(
@@ -58,4 +64,6 @@ await writeFile(
   `${JSON.stringify({ name: 'email-delivery-runtime', private: true, type: 'module', scripts }, null, 2)}\n`,
 );
 
-console.log(`built ${HANDLERS.length} handlers -> dist/lambda, ${CLIS.length} CLIs -> dist/image`);
+console.log(
+  `built ${HANDLERS.length} handlers -> dist/lambda, ${Object.keys(ENTRIES).length} CLIs -> dist/image`,
+);

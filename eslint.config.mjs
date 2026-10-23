@@ -5,7 +5,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'infra/**', 'templates/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/coverage/**',
+      'infra/**',
+      'templates/**',
+      'web/**',
+    ],
   },
   {
     files: ['**/*.mjs'],
@@ -29,7 +36,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/functions/src/cli/**/*.ts', 'packages/*/test/**/*.ts'],
+    files: [
+      'packages/functions/src/cli/**/*.ts',
+      'packages/console-api/src/main.ts',
+      'packages/*/test/**/*.ts',
+    ],
     rules: { 'no-console': 'off' },
   },
   {

@@ -5,6 +5,8 @@ updates:
     directory: /
     schedule: { interval: weekly }
     groups:
+      eslint:
+        patterns: ['eslint', '@eslint/*']
       functions-minor:
         update-types: [minor, patch]
     ignore:
@@ -15,6 +17,8 @@ updates:
     directory: /infra
     schedule: { interval: weekly }
     groups:
+      eslint:
+        patterns: ['eslint', '@eslint/*']
       infra-minor:
         update-types: [minor, patch]
     ignore:
@@ -23,6 +27,20 @@ updates:
       # cdk-nag 3 replaces NagSuppressions with Validations.acknowledge() and has no regex/prefix
       # suppressions yet; migrate deliberately.
       - dependency-name: cdk-nag
+        update-types: [version-update:semver-major]
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    groups:
+      eslint:
+        patterns: ['eslint', '@eslint/*']
+      web-minor:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+      # typescript-eslint supports TypeScript < 6.1.
+      - dependency-name: typescript
         update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /

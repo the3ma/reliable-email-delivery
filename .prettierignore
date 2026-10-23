@@ -6,3 +6,6 @@ package-lock.json
 infra/package-lock.json
 templates/
 *.png
+
+# web/ has its own prettier + eslint config and lockfile
+web/

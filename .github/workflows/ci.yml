@@ -30,6 +30,25 @@ jobs:
         run: npm test
       - run: npm run build
 
+  web:
+    name: Delivery Console UI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --run
+      - run: npm run build
+
   infra:
     name: Infrastructure (CDK)
     runs-on: ubuntu-latest
@@ -60,7 +79,7 @@ jobs:
   local-stack:
     name: Integration + end-to-end (LocalStack, Mailpit)
     runs-on: ubuntu-latest
-    needs: [functions]
+    needs: [functions, web]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -81,9 +100,13 @@ jobs:
         run: docker compose run --rm -T jobs seed
       - name: Smoke test
         run: ./scripts/smoke.sh
+      - name: Start the Delivery Console (demo profile)
+        run: docker compose --profile demo up -d --build --wait --wait-timeout 300 console-api web
+      - name: Console smoke test (through the web proxy)
+        run: ./scripts/console-smoke.sh
       - name: Logs on failure
         if: failure()
-        run: docker compose --profile jobs logs --no-color --tail=300
+        run: docker compose --profile jobs --profile demo logs --no-color --tail=300
       - name: Tear down
         if: always()
-        run: docker compose --profile jobs down -v
+        run: docker compose --profile jobs --profile demo down -v

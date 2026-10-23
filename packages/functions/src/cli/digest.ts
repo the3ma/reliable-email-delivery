@@ -1,4 +1,5 @@
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { runDigestSegments } from '../ops/digest.js';
 import {
   applyLocalDefaults,
   intArg,
@@ -36,17 +37,13 @@ await main(async () => {
   const targets = args.all
     ? Array.from({ length: segments }, (_, i) => i)
     : [intArg(args, 'segment', 0)];
-  let failures = 0;
-  for (const segment of targets) {
-    try {
-      const result = await handler({ segment }, localContext('notifier-digest', 5 * 60_000));
-      console.log(JSON.stringify(result));
-    } catch (error) {
-      failures += 1;
-      console.error(
-        `segment ${segment} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  const summary = await runDigestSegments(
+    (event) => handler(event, localContext('notifier-digest', 5 * 60_000)),
+    targets,
+  );
+  for (const result of summary.results) console.log(JSON.stringify(result));
+  for (const failure of summary.failures) {
+    console.error(`segment ${String(failure.segment)} failed: ${failure.message}`);
   }
-  return failures === 0 ? 0 : 1;
+  return summary.failures.length === 0 ? 0 : 1;
 });

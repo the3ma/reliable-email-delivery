@@ -1,0 +1,57 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.glyph {
+  font-weight: 700;
+}
+
+.reason {
+  font-weight: 400;
+}
+
+.SENT {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.SKIPPED {
+  color: var(--neutral);
+  background: var(--neutral-bg);
+}
+
+.RELEASED,
+.CLAIMED {
+  color: var(--info);
+  background: var(--info-bg);
+}
+
+.FAILED_PERMANENT {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.AMBIGUOUS {
+  color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}

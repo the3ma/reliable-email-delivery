@@ -54,6 +54,29 @@ describe('DynamoDeliveriesStore', () => {
     expect(String(input?.UpdateExpression)).toContain('attempts = if_not_exists(attempts, :zero)');
   });
 
+  it('claim and skip write the masked meta under aliased names', async () => {
+    const { client, sent } = fakeClient();
+    const store = new DynamoDeliveriesStore(client, 'deliveries');
+    const meta = {
+      userId: 'u-1',
+      category: 'report_ready',
+      kind: 'immediate' as const,
+      toMasked: 'a***@example.test',
+    };
+    await store.claim({ deliveryId: ID, owner: 'r', leaseUntil: 1, now: NOW, expiresAt: 1, meta });
+    await store.skip(ID, 'suppressed', NOW, 1, meta);
+    for (const command of sent) {
+      expect(String(command.input.UpdateExpression)).toContain(
+        '#uid = :uid, #cat = :cat, #kind = :kind, #to = :to',
+      );
+      expect(command.input.ExpressionAttributeNames).toMatchObject({
+        '#kind': 'kind',
+        '#to': 'toMasked',
+      });
+      expect(command.input.ExpressionAttributeValues).toMatchObject({ ':to': 'a***@example.test' });
+    }
+  });
+
   it('claim: ConditionalCheckFailed -> false, other errors throw', async () => {
     const { client } = fakeClient([conditionFailed(), awsError('InternalServerError', 500)]);
     const store = new DynamoDeliveriesStore(client, 'deliveries');

@@ -16,6 +16,7 @@ import {
 import type {
   AccountSuppressionList,
   DeliveriesStore,
+  DeliveryMeta,
   DeliveryLogEntry,
   DeliveryLogWriter,
   EmailMessage,
@@ -46,6 +47,15 @@ export interface ProcessorDeps {
 }
 
 type ProcessorContext = Pick<Context, 'awsRequestId' | 'getRemainingTimeInMillis'>;
+
+function metaOf(message: EmailMessage): DeliveryMeta {
+  return {
+    userId: message.userId,
+    category: message.category,
+    kind: message.kind,
+    toMasked: maskEmail(message.to),
+  };
+}
 
 /** Loggable view of a message: never the address, never a body, subject only when allowed. */
 function describeMessage(message: EmailMessage): Record<string, unknown> {
@@ -93,6 +103,7 @@ export function createProcessor(deps: ProcessorDeps) {
       reason,
       now,
       retentionExpiry(now),
+      metaOf(message),
     );
     telemetry.count('EmailsSkipped');
     log.info('delivery skipped', { ...describeMessage(message), reason, written, ...extra });
@@ -161,6 +172,7 @@ export function createProcessor(deps: ProcessorDeps) {
       deliveryId: message.deliveryId,
       owner,
       now: clock(),
+      meta: metaOf(message),
     });
     switch (claim.kind) {
       case 'duplicate':

@@ -26,5 +26,8 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.150"
+  },
+  "exports": {
+    ".": "./src/index.ts"
   }
 }

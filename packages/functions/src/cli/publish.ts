@@ -1,6 +1,5 @@
-import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
-import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
-import { applyLocalDefaults, intArg, main, parseArgs, resolveQueueUrl } from './local.js';
+import { AwsPublisher } from '../ops/publish.js';
+import { applyLocalDefaults, intArg, main, parseArgs } from './local.js';
 import { generateRequests } from './publish-data.js';
 
 await main(async () => {
@@ -16,49 +15,28 @@ await main(async () => {
     users: Math.max(1, intArg(args, 'users', 40)),
     seed: intArg(args, 'seed', 42),
   });
-
-  let failed = 0;
-  if (args.direct) {
-    const sqs = new SQSClient({});
-    const queueUrl = await resolveQueueUrl(sqs, 'INTAKE_QUEUE_URL', 'intake');
-    for (let i = 0; i < requests.length; i += 10) {
-      const batch = requests.slice(i, i + 10);
-      const result = await sqs.send(
-        new SendMessageBatchCommand({
-          QueueUrl: queueUrl,
-          Entries: batch.map((request, index) => ({
-            Id: String(index),
-            MessageBody: JSON.stringify(request.detail),
-          })),
-        }),
-      );
-      failed += result.Failed?.length ?? 0;
-    }
-  } else {
-    const events = new EventBridgeClient({});
-    const bus = process.env.EVENT_BUS_NAME ?? 'app-events';
-    for (let i = 0; i < requests.length; i += 10) {
-      const batch = requests.slice(i, i + 10);
-      const result = await events.send(
-        new PutEventsCommand({
-          Entries: batch.map((request) => ({
-            EventBusName: bus,
-            Source: 'app.notifications',
-            DetailType: 'notification.requested',
-            Detail: JSON.stringify(request.detail),
-          })),
-        }),
-      );
-      failed += result.FailedEntryCount ?? 0;
-    }
-  }
+  const publisher = new AwsPublisher({
+    eventBusName: process.env.EVENT_BUS_NAME ?? 'app-events',
+    queueNames: { intake: 'intake', email: 'email' },
+    queueUrls: {
+      ...(process.env.INTAKE_QUEUE_URL ? { intake: process.env.INTAKE_QUEUE_URL } : {}),
+      ...(process.env.EMAIL_QUEUE_URL ? { email: process.env.EMAIL_QUEUE_URL } : {}),
+    },
+  });
+  const details = requests.map((request) => request.detail);
+  const { published, failed } = args.direct
+    ? await publisher.sendRaw(
+        'intake',
+        details.map((detail) => JSON.stringify(detail)),
+      )
+    : await publisher.putEvents(details);
 
   const count = (kind: string): number =>
     requests.filter((request) => request.kind === kind).length;
   console.log(
     JSON.stringify({
       mode: args.direct ? 'sqs-direct' : 'eventbridge',
-      published: requests.length - failed,
+      published,
       failed,
       valid: count('valid'),
       duplicates: count('duplicate'),

@@ -3,6 +3,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { DeliveryStatus } from '../deliveries.js';
 import type {
   ClaimRequest,
+  DeliveryMeta,
   Completion,
   DeliveriesStore,
   DeliveryRecord,
@@ -41,7 +42,30 @@ function toRecord(item: Record<string, unknown>): DeliveryRecord {
   if (typeof item.leaseOwner === 'string') record.leaseOwner = item.leaseOwner;
   if (typeof item.sesMessageId === 'string') record.sesMessageId = item.sesMessageId;
   if (typeof item.reason === 'string') record.reason = item.reason;
+  if (typeof item.userId === 'string') record.userId = item.userId;
+  if (typeof item.category === 'string') record.category = item.category;
+  if (item.kind === 'immediate' || item.kind === 'digest') record.kind = item.kind;
+  if (typeof item.toMasked === 'string') record.toMasked = item.toMasked;
   return record;
+}
+
+/** SET clause for the descriptive fields; names are aliased because some are reserved words. */
+function metaClause(meta: DeliveryMeta | undefined): {
+  set: string;
+  names: Record<string, string>;
+  values: Record<string, unknown>;
+} {
+  if (!meta) return { set: '', names: {}, values: {} };
+  return {
+    set: ', #uid = :uid, #cat = :cat, #kind = :kind, #to = :to',
+    names: { '#uid': 'userId', '#cat': 'category', '#kind': 'kind', '#to': 'toMasked' },
+    values: {
+      ':uid': meta.userId,
+      ':cat': meta.category,
+      ':kind': meta.kind,
+      ':to': meta.toMasked,
+    },
+  };
 }
 
 /** `status` is a DynamoDB reserved word, hence `#s` everywhere. */
@@ -54,6 +78,7 @@ export class DynamoDeliveriesStore implements DeliveriesStore {
   claim(request: ClaimRequest): Promise<boolean> {
     // An UpdateItem upsert has the same condition as the contract's PutItem claim but keeps
     // `attempts` from a RELEASED item instead of overwriting it.
+    const meta = metaClause(request.meta);
     return conditional(() =>
       this.client.send(
         new UpdateCommand({
@@ -61,10 +86,11 @@ export class DynamoDeliveriesStore implements DeliveriesStore {
           Key: { deliveryId: request.deliveryId },
           UpdateExpression:
             'SET #s = :claimed, leaseOwner = :owner, leaseUntil = :lease, updatedAt = :now, ' +
-            'expiresAt = :exp, attempts = if_not_exists(attempts, :zero) REMOVE reason',
+            `expiresAt = :exp, attempts = if_not_exists(attempts, :zero)${meta.set} REMOVE reason`,
           ConditionExpression: 'attribute_not_exists(deliveryId) OR #s = :released',
-          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeNames: { '#s': 'status', ...meta.names },
           ExpressionAttributeValues: {
+            ...meta.values,
             ':claimed': DeliveryStatus.CLAIMED,
             ':released': DeliveryStatus.RELEASED,
             ':owner': request.owner,
@@ -151,7 +177,14 @@ export class DynamoDeliveriesStore implements DeliveriesStore {
     );
   }
 
-  skip(deliveryId: string, reason: string, now: Date, expiresAt: number): Promise<boolean> {
+  skip(
+    deliveryId: string,
+    reason: string,
+    now: Date,
+    expiresAt: number,
+    meta?: DeliveryMeta,
+  ): Promise<boolean> {
+    const extra = metaClause(meta);
     return conditional(() =>
       this.client.send(
         new UpdateCommand({
@@ -159,10 +192,11 @@ export class DynamoDeliveriesStore implements DeliveriesStore {
           Key: { deliveryId },
           UpdateExpression:
             'SET #s = :skipped, reason = :reason, updatedAt = :now, expiresAt = :exp, ' +
-            'attempts = if_not_exists(attempts, :zero)',
+            `attempts = if_not_exists(attempts, :zero)${extra.set}`,
           ConditionExpression: 'attribute_not_exists(deliveryId) OR #s = :released',
-          ExpressionAttributeNames: { '#s': 'status' },
+          ExpressionAttributeNames: { '#s': 'status', ...extra.names },
           ExpressionAttributeValues: {
+            ...extra.values,
             ':skipped': DeliveryStatus.SKIPPED,
             ':released': DeliveryStatus.RELEASED,
             ':reason': reason,

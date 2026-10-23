@@ -3,6 +3,7 @@
 #   make up      localstack + mailpit + both workers
 #   make seed    subscriptions (every 10th address pre-suppressed)
 #   make smoke   publish -> immediate + digest -> dedup -> suppression -> kill switch -> feedback
+#   make demo    + the Delivery Console (http://localhost:8080) - a local demo UI, never deployed
 name: reliable-email-delivery
 
 x-env: &env
@@ -18,6 +19,8 @@ x-env: &env
   FROM_ADDRESS: notifications@example.test
   APP_BASE_URL: http://localhost:8080
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  # Local only: pick up kill-switch changes in seconds (AWS keeps the 5-minute default).
+  TOGGLE_CACHE_TTL_SECONDS: '5'
 
 x-functions: &functions
   build:
@@ -65,3 +68,31 @@ services:
   jobs:
     <<: *functions
     profiles: [jobs]
+
+  # Delivery Console (local demo UI, docs/CONSOLE.md): `docker compose --profile demo up -d`.
+  console-api:
+    <<: *functions
+    profiles: [demo]
+    command: ['console-api']
+    environment:
+      <<: *env
+      PORT: '3001'
+      MAILPIT_URL: http://mailpit:8025
+      WEB_ORIGIN: http://localhost:8080
+    ports: ['3001:3001']
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/api/v1/health >/dev/null || exit 1']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: ./web
+      target: serve
+    profiles: [demo]
+    environment:
+      API_UPSTREAM: console-api:3001
+    ports: ['8080:8080']
+    depends_on:
+      console-api: { condition: service_healthy }

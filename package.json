@@ -26,7 +26,8 @@
     "publish": "npm run --silent -w @mail/functions publish --",
     "feedback": "npm run --silent -w @mail/functions feedback --",
     "build:bundles": "node scripts/build-functions.mjs",
-    "smoke:bundles": "node scripts/smoke-bundles.mjs"
+    "smoke:bundles": "node scripts/smoke-bundles.mjs",
+    "console-api": "npm run --silent -w @mail/console-api start --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
