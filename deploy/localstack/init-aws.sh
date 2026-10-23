@@ -20,23 +20,19 @@ awslocal events put-rule --name notification-requested --event-bus-name app-even
 awslocal events put-targets --rule notification-requested --event-bus-name app-events \
   --targets "Id=intake,Arn=arn:aws:sqs:$R:$ACCT:intake,InputPath=\$.detail" >/dev/null
 
-table() { # name key-schema attribute-definitions [gsi-json] [ttl-attribute]
+table() { # name key-schema-json attribute-definitions-json [gsi-json] [ttl-attribute]
   local args=(--table-name "$1" --billing-mode PAY_PER_REQUEST --key-schema "$2" --attribute-definitions "$3")
   [ -n "${4:-}" ] && args+=(--global-secondary-indexes "$4")
   awslocal dynamodb create-table "${args[@]}" >/dev/null
-  [ -n "${5:-}" ] && awslocal dynamodb update-time-to-live --table-name "$1" \
-    --time-to-live-specification "Enabled=true,AttributeName=$5" >/dev/null
+  [ -n "${5:-}" ] && awslocal dynamodb update-time-to-live --table-name "$1"     --time-to-live-specification "Enabled=true,AttributeName=$5" >/dev/null
   return 0
 }
 BY_SEGMENT='[{"IndexName":"by-segment","KeySchema":[{"AttributeName":"segment","KeyType":"HASH"},{"AttributeName":"userId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]'
-table subscriptions 'AttributeName=userId,KeyType=HASH' \
-  'AttributeName=userId,AttributeType=S AttributeName=segment,AttributeType=N' "$BY_SEGMENT"
-table pending-digest 'AttributeName=userId,KeyType=HASH AttributeName=sk,KeyType=RANGE' \
-  'AttributeName=userId,AttributeType=S AttributeName=sk,AttributeType=S AttributeName=segment,AttributeType=N' "$BY_SEGMENT" expiresAt
-table deliveries 'AttributeName=deliveryId,KeyType=HASH' 'AttributeName=deliveryId,AttributeType=S' '' expiresAt
-table delivery-log 'AttributeName=deliveryId,KeyType=HASH AttributeName=sk,KeyType=RANGE' \
-  'AttributeName=deliveryId,AttributeType=S AttributeName=sk,AttributeType=S' '' expiresAt
-table suppressions 'AttributeName=emailHash,KeyType=HASH' 'AttributeName=emailHash,AttributeType=S'
+table subscriptions '[{"AttributeName":"userId","KeyType":"HASH"}]'   '[{"AttributeName":"userId","AttributeType":"S"},{"AttributeName":"segment","AttributeType":"N"}]' "$BY_SEGMENT"
+table pending-digest '[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"sk","KeyType":"RANGE"}]'   '[{"AttributeName":"userId","AttributeType":"S"},{"AttributeName":"sk","AttributeType":"S"},{"AttributeName":"segment","AttributeType":"N"}]' "$BY_SEGMENT" expiresAt
+table deliveries '[{"AttributeName":"deliveryId","KeyType":"HASH"}]' '[{"AttributeName":"deliveryId","AttributeType":"S"}]' '' expiresAt
+table delivery-log '[{"AttributeName":"deliveryId","KeyType":"HASH"},{"AttributeName":"sk","KeyType":"RANGE"}]'   '[{"AttributeName":"deliveryId","AttributeType":"S"},{"AttributeName":"sk","AttributeType":"S"}]' '' expiresAt
+table suppressions '[{"AttributeName":"emailHash","KeyType":"HASH"}]' '[{"AttributeName":"emailHash","AttributeType":"S"}]'
 
 awslocal ssm put-parameter --name /local/email/send-emails --type String --value enabled --overwrite >/dev/null
 awslocal ssm put-parameter --name /local/email/record-deliveries --type String --value enabled --overwrite >/dev/null
