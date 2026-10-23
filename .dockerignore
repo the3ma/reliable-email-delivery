@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/coverage
+infra
+docs
+.git
+.github
+*.md
+!templates/**

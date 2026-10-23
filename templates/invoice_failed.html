@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payment failed</title>
+  </head>
+  <body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#1f2933;background:#ffffff">
+    <p>Hello,</p>
+    <p>
+      We could not collect the payment for invoice <strong>{{invoiceNumber}}</strong>
+      ({{amount}} {{currency}}).
+    </p>
+    <p>
+      <a href="{{entityUrl}}" style="display:inline-block;padding:10px 16px;background:#b42318;color:#ffffff;text-decoration:none;border-radius:4px">Update payment method</a>
+    </p>
+    <hr style="border:none;border-top:1px solid #d9dee3" />
+    <p style="font-size:12px;color:#616e7c">
+      You get this e-mail immediately because "Invoice failed" notifications are set to immediate.
+      <a href="{{preferencesUrl}}" style="color:#616e7c">Manage notifications</a>
+    </p>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "@mail/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lambda handlers (notifier-immediate, notifier-digest, processor, feedback) and local CLIs.",
+  "scripts": {
+    "worker-immediate": "tsx --import ../../scripts/register-text-loader.mjs src/cli/worker-immediate.ts",
+    "worker-processor": "tsx --import ../../scripts/register-text-loader.mjs src/cli/worker-processor.ts",
+    "digest": "tsx --import ../../scripts/register-text-loader.mjs src/cli/digest.ts",
+    "seed": "tsx --import ../../scripts/register-text-loader.mjs src/cli/seed.ts",
+    "publish": "tsx --import ../../scripts/register-text-loader.mjs src/cli/publish.ts",
+    "feedback": "tsx --import ../../scripts/register-text-loader.mjs src/cli/feedback.ts"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.36.0",
+    "@aws-lambda-powertools/metrics": "^2.36.0",
+    "@aws-lambda-powertools/tracer": "^2.36.0",
+    "@aws-sdk/client-dynamodb": "^3.1156.0",
+    "@aws-sdk/client-eventbridge": "^3.1156.0",
+    "@aws-sdk/client-sesv2": "^3.1156.0",
+    "@aws-sdk/client-sqs": "^3.1156.0",
+    "@aws-sdk/lib-dynamodb": "^3.1156.0",
+    "@mail/core": "0.1.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.150"
+  }
+}

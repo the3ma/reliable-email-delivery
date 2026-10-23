@@ -1,0 +1,42 @@
+{
+  "name": "reliable-email-delivery",
+  "private": true,
+  "version": "0.1.0",
+  "description": "At-most-once e-mail notifications on AWS: dedup keys, a claim state machine, suppression, redaction and kill switches.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build-functions.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "worker-immediate": "npm run --silent -w @mail/functions worker-immediate --",
+    "worker-processor": "npm run --silent -w @mail/functions worker-processor --",
+    "digest": "npm run --silent -w @mail/functions digest --",
+    "seed": "npm run --silent -w @mail/functions seed --",
+    "publish": "npm run --silent -w @mail/functions publish --",
+    "feedback": "npm run --silent -w @mail/functions feedback --"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.0",
+    "globals": "^17.0.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "~4.0.18"
+  }
+}

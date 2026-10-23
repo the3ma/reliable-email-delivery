@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  functions:
+    name: Core + functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - name: Unit tests
+        run: npm test
+      - run: npm run build
+
+  infra:
+    name: Infrastructure (CDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            infra/package-lock.json
+      - name: Install functions (bundled by the real synth)
+        run: npm ci
+      - run: npm ci
+        working-directory: infra
+      - run: npm run lint
+        working-directory: infra
+      - name: Tests (assertions, IAM, dependency cycles, cdk-nag)
+        run: npm test
+        working-directory: infra
+      - name: Synth dev + prod with real esbuild bundling
+        working-directory: infra
+        run: |
+          npx cdk synth -q -c stage=dev
+          npx cdk synth -q -c stage=prod -c alarmEmail=ops@example.test
+
+  local-stack:
+    name: Integration + end-to-end (LocalStack, Mailpit)
+    runs-on: ubuntu-latest
+    needs: [functions]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Start localstack, mailpit and the workers
+        run: docker compose up -d --build --wait --wait-timeout 300 localstack mailpit worker-immediate worker-processor
+      - name: DynamoDB integration tests (real conditional writes, item budget)
+        run: npm run test:int
+        env:
+          AWS_ENDPOINT_URL: http://localhost:4566
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+      - name: Seed subscriptions
+        run: docker compose run --rm -T jobs seed
+      - name: Smoke test
+        run: ./scripts/smoke.sh
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile jobs logs --no-color --tail=300
+      - name: Tear down
+        if: always()
+        run: docker compose --profile jobs down -v

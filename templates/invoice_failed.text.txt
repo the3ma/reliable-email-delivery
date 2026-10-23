@@ -1,0 +1,9 @@
+Hello,
+
+We could not collect the payment for invoice {{invoiceNumber}} ({{amount}} {{currency}}).
+
+Update your payment method: {{entityUrl}}
+
+--
+You get this e-mail immediately because "Invoice failed" notifications are set to immediate.
+Manage notifications: {{preferencesUrl}}

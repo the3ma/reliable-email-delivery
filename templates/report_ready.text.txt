@@ -1,0 +1,9 @@
+Hello,
+
+Your report "{{reportName}}" is ready.
+
+Open it: {{entityUrl}}
+
+--
+You get this e-mail immediately because "Report ready" notifications are set to immediate.
+Manage notifications: {{preferencesUrl}}

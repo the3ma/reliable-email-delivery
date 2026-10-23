@@ -1,0 +1,1 @@
+Your daily summary: {{total}} update{{#plural}}s{{/plural}}{{#part}} (part {{partIndex}}/{{partCount}}){{/part}}

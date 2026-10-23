@@ -1,0 +1,22 @@
+{
+  "name": "@mail/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain core: schemas, dedup keys, claim state machine, redaction, item budget, toggles, templates and ports.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1156.0",
+    "@aws-sdk/client-sesv2": "^3.1156.0",
+    "@aws-sdk/client-ssm": "^3.1156.0",
+    "@aws-sdk/lib-dynamodb": "^3.1156.0",
+    "nodemailer": "^8.0.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.0"
+  }
+}

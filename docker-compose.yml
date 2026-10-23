@@ -1,0 +1,64 @@
+# Local stand-in for the AWS stack: LocalStack for EventBridge / SQS / DynamoDB / SSM, Mailpit for SES.
+# The workers long-poll the queues and call the same handlers the Lambdas run.
+#   make up      localstack + mailpit + both workers
+#   make seed    subscriptions (every 10th address pre-suppressed)
+#   make smoke   publish -> immediate + digest -> dedup -> suppression -> kill switch -> feedback
+name: reliable-email-delivery
+
+x-env: &env
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test # LocalStack's documented dummy credentials
+  AWS_SECRET_ACCESS_KEY: test
+  MAIL_TRANSPORT: smtp
+  SMTP_HOST: mailpit
+  SMTP_PORT: '1025'
+  SSM_PREFIX: /local/email/
+  SENDING_HARD_DISABLED: 'false'
+  FROM_ADDRESS: notifications@example.test
+  APP_BASE_URL: http://localhost:8080
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+x-functions: &functions
+  build:
+    context: .
+    dockerfile: Dockerfile.functions
+  image: reliable-email-delivery/functions:local
+  init: true # SIGTERM reaches node through npm
+  environment:
+    <<: *env
+  depends_on:
+    localstack: { condition: service_healthy }
+    mailpit: { condition: service_started }
+
+services:
+  localstack:
+    image: localstack/localstack:4
+    environment:
+      SERVICES: sqs,dynamodb,ssm,events
+    ports: ['4566:4566']
+    volumes:
+      - ./deploy/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'awslocal ssm get-parameter --name /local/email/record-deliveries >/dev/null']
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['8025:8025', '1025:1025']
+
+  worker-immediate:
+    <<: *functions
+    command: ['worker-immediate']
+
+  worker-processor:
+    <<: *functions
+    command: ['worker-processor']
+
+  # One-shot jobs: `docker compose run --rm jobs <script> [-- args]`.
+  jobs:
+    <<: *functions
+    profiles: [jobs]

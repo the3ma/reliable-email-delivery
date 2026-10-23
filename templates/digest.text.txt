@@ -1,0 +1,22 @@
+Hello,
+
+Here is your summary for {{localDate}}.
+{{#part}}
+This is part {{partIndex}} of {{partCount}}.
+{{/part}}
+{{#groups}}
+
+{{label}} ({{count}})
+{{#items}}
+- {{title}}
+  {{url}}
+{{/items}}
+{{/groups}}
+{{#hasMore}}
+
+...and {{moreCount}} more: {{appUrl}}
+{{/hasMore}}
+
+--
+You get one summary per day for the categories you set to "daily digest".
+Manage notifications: {{preferencesUrl}}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Exported from a word processor: these meta tags must render untouched. -->
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="Generator" content="Word-processor HTML export 15 (filtered medium)" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your daily summary</title>
+  </head>
+  <body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#1f2933;background:#ffffff">
+    <p>Hello,</p>
+    <p>Here is your summary for <strong>{{localDate}}</strong>.</p>
+    {{#part}}
+    <p>This is part {{partIndex}} of {{partCount}}.</p>
+    {{/part}}
+    {{#groups}}
+    <h2 style="font-size:16px;margin:24px 0 8px">{{label}} ({{count}})</h2>
+    <ul style="padding-left:20px;margin:0">
+      {{#items}}
+      <li style="margin:4px 0"><a href="{{url}}" style="color:#1f5fbf">{{title}}</a></li>
+      {{/items}}
+    </ul>
+    {{/groups}}
+    {{#hasMore}}
+    <p>...and <a href="{{appUrl}}" style="color:#1f5fbf">{{moreCount}} more</a>.</p>
+    {{/hasMore}}
+    <hr style="border:none;border-top:1px solid #d9dee3" />
+    <p style="font-size:12px;color:#616e7c">
+      You get one summary per day for the categories you set to "daily digest".
+      <a href="{{preferencesUrl}}" style="color:#616e7c">Manage notifications</a>
+    </p>
+  </body>
+</html>
