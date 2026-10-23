@@ -32,5 +32,19 @@ export default tseslint.config(
     files: ['packages/functions/src/cli/**/*.ts', 'packages/*/test/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
+  {
+    // A dynamic import of a CommonJS package (the AWS SDK) loses its named exports in the ESM
+    // bundle ('SQSClient is not a constructor'); only our own modules may be imported lazily.
+    files: ['packages/*/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression[source.value=/^[^.]/]',
+          message: 'Import packages statically; dynamic import() is only for relative modules.',
+        },
+      ],
+    },
+  },
   prettier,
 );

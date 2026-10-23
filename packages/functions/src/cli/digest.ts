@@ -1,4 +1,12 @@
-import { applyLocalDefaults, intArg, localContext, main, parseArgs } from './local.js';
+import { SQSClient } from '@aws-sdk/client-sqs';
+import {
+  applyLocalDefaults,
+  intArg,
+  localContext,
+  main,
+  parseArgs,
+  resolveQueueUrl,
+} from './local.js';
 
 const USAGE = 'usage: digest -- (--segment N | --all) [--ignore-window]';
 
@@ -16,13 +24,12 @@ await main(async () => {
     process.env.DIGEST_WINDOW_START_HOUR = '0';
     process.env.DIGEST_WINDOW_END_HOUR = '24';
   }
-  const { SQSClient } = await import('@aws-sdk/client-sqs');
-  const { resolveQueueUrl } = await import('./local.js');
   process.env.EMAIL_QUEUE_URL = await resolveQueueUrl(
     new SQSClient({}),
     'EMAIL_QUEUE_URL',
     'email',
   );
+  // Dynamic only for our own handler module: it reads the environment set above when first used.
   const { handler } = await import('../handlers/notifier-digest.js');
 
   const segments = Number(process.env.SEGMENTS ?? '16');

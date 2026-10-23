@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "node scripts/build-functions.mjs",
+    "build": "node scripts/build-functions.mjs && node scripts/smoke-bundles.mjs",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -24,7 +24,9 @@
     "digest": "npm run --silent -w @mail/functions digest --",
     "seed": "npm run --silent -w @mail/functions seed --",
     "publish": "npm run --silent -w @mail/functions publish --",
-    "feedback": "npm run --silent -w @mail/functions feedback --"
+    "feedback": "npm run --silent -w @mail/functions feedback --",
+    "build:bundles": "node scripts/build-functions.mjs",
+    "smoke:bundles": "node scripts/smoke-bundles.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
