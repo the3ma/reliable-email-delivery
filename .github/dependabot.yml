@@ -13,6 +13,9 @@ updates:
       # @types/node follows the Node runtime (22 LTS), not the latest Node release.
       - dependency-name: '@types/node'
         update-types: [version-update:semver-major]
+      # typescript-eslint supports TypeScript < 6.1; upgrade the two together by hand.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
   - package-ecosystem: npm
     directory: /infra
     schedule: { interval: weekly }
@@ -23,6 +26,8 @@ updates:
         update-types: [minor, patch]
     ignore:
       - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+      - dependency-name: typescript
         update-types: [version-update:semver-major]
       # cdk-nag 3 replaces NagSuppressions with Validations.acknowledge() and has no regex/prefix
       # suppressions yet; migrate deliberately.
@@ -49,9 +54,9 @@ updates:
       actions-minor:
         update-types: [minor, patch]
   - package-ecosystem: docker
-    directory: /
+    directories: ['/', '/web']
     schedule: { interval: weekly }
     ignore:
-      # Node: stay on LTS lines (even majors).
+      # The image runs the Lambda runtime's Node line (22); move both together, by hand.
       - dependency-name: node
-        versions: ['23.x', '25.x', '27.x']
+        update-types: [version-update:semver-major]
