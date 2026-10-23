@@ -36,6 +36,9 @@ services:
     image: localstack/localstack:4
     environment:
       SERVICES: sqs,dynamodb,ssm,events
+      # Queue URLs must point at this service, not localhost: SDK v3 sends SQS calls to the queue URL host.
+      LOCALSTACK_HOST: localstack:4566
+      SQS_ENDPOINT_STRATEGY: path
     ports: ['4566:4566']
     volumes:
       - ./deploy/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
