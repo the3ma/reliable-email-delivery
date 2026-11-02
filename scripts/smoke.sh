@@ -10,7 +10,7 @@ MAILPIT="${MAILPIT:-http://localhost:8025}"
 ok()   { printf '\033[32mok\033[0m  %s\n' "$*"; }
 fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
-job()  { docker compose run --rm --no-deps -T jobs "$@"; }
+job()  { docker compose --progress quiet run --rm --no-deps -T jobs "$@"; }
 aws()  { docker compose exec -T localstack awslocal "$@"; }
 mail_total() { curl -sf "$MAILPIT/api/v1/messages?limit=1" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).total))'; }
 count_status() { # status [reason]
