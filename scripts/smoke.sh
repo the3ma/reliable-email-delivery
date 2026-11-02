@@ -3,6 +3,7 @@
 #   publish (incl. duplicates + invalid) -> immediate mail, one per delivery id, none to suppressed
 #   -> publish the same batch again: no new mail -> digest twice: one digest per user
 #   -> kill switch: nothing sent, SKIPPED(disabled) -> SES bounce feedback suppresses the address
+#      and lands in the delivery log of the bounced e-mail
 set -euo pipefail
 
 MAILPIT="${MAILPIT:-http://localhost:8025}"
@@ -17,6 +18,9 @@ count_status() { # status [reason]
   if [ -n "${2:-}" ]; then filter='#s = :s AND reason = :r'; values="{\":s\":{\"S\":\"$1\"},\":r\":{\"S\":\"$2\"}}"; fi
   aws dynamodb scan --table-name deliveries --select COUNT --filter-expression "$filter" \
     --expression-attribute-names '{"#s":"status"}' --expression-attribute-values "$values" --query Count --output text
+}
+restart_processor() { # drop the 5-minute toggle cache; quiet unless it fails
+  local out; out=$(docker compose restart worker-processor 2>&1) || { echo "$out" >&2; fail "worker-processor did not restart"; }
 }
 queue_len() { # name -> visible + in flight
   local url; url=$(aws sqs get-queue-url --queue-name "$1" --query QueueUrl --output text)
@@ -79,7 +83,7 @@ ok "$((after_digest - mails)) digests, and a second run sent none"
 
 step "4. kill switch"
 aws ssm put-parameter --name /local/email/send-emails --value disabled --type String --overwrite >/dev/null
-docker compose restart worker-processor >/dev/null # drop the 5-minute toggle cache
+restart_processor
 before=$(count_status SKIPPED disabled)
 job publish -- --count 30 --users 40 --seed 7 >/dev/null
 drain
@@ -87,14 +91,26 @@ drain
 [ "$(count_status SKIPPED disabled)" -gt "$before" ] || fail "nothing was recorded as SKIPPED(disabled)"
 ok "nothing sent while disabled; $(( $(count_status SKIPPED disabled) - before )) recorded as SKIPPED(disabled)"
 aws ssm put-parameter --name /local/email/send-emails --value enabled --type String --overwrite >/dev/null
-docker compose restart worker-processor >/dev/null
+restart_processor
 
 step "5. SES bounce feedback"
+# Bounce a real delivered e-mail: SES echoes the message's deliveryId tag back in the event.
+read -r bounced_to bounced_id < <(curl -sf "$MAILPIT/api/v1/messages?limit=1" | node -e '
+  let s="";process.stdin.on("data",d=>s+=d).on("end",async()=>{const m=JSON.parse(s).messages[0];
+  const h=await (await fetch(process.argv[1]+"/api/v1/message/"+m.ID+"/headers")).json();
+  console.log(m.To[0].Address,(h["X-Tag-Deliveryid"]||h["X-Tag-deliveryId"]||[])[0])})' "$MAILPIT")
+[ -n "$bounced_id" ] || fail "the delivered e-mail carries no deliveryId tag"
 supp_before=$(aws dynamodb scan --table-name suppressions --select COUNT --query Count --output text)
-job feedback -- --type bounce --email user-003@example.test >/dev/null
+job feedback -- --type bounce --email "$bounced_to" --delivery-id "$bounced_id" >/dev/null
 supp_after=$(aws dynamodb scan --table-name suppressions --select COUNT --query Count --output text)
 [ "$supp_after" -eq $((supp_before + 1)) ] || fail "the permanent bounce did not add a suppression"
-aws dynamodb scan --table-name suppressions --output json | grep -q 'user-003' && fail "the suppression list stores a raw address"
+aws dynamodb scan --table-name suppressions --output json | grep -qF "$bounced_to" && fail "the suppression list stores a raw address"
 ok "permanent bounce -> suppressed (stored as a hash, not the address)"
+bounced=$(aws dynamodb query --table-name delivery-log --key-condition-expression 'deliveryId = :d' \
+  --filter-expression '#e = :e' --expression-attribute-names '{"#e":"event"}' \
+  --expression-attribute-values "{\":d\":{\"S\":\"$bounced_id\"},\":e\":{\"S\":\"bounced\"}}" \
+  --select COUNT --query Count --output text)
+[ "$bounced" -eq 1 ] || fail "the bounce is not in the delivery's log ($bounced rows)"
+ok "the bounce is recorded in the log of the delivery it belongs to"
 
 printf '\n\033[32mSmoke test passed.\033[0m\n'
