@@ -75,6 +75,9 @@ export class PowertoolsTelemetry implements Telemetry {
   }
 
   flush(): void {
+    // A run that counted nothing (a digest with no due users, a repeat run) has nothing to
+    // publish; Powertools would print a "No application metrics to publish" warning for it.
+    if (!this.metrics.hasStoredMetrics()) return;
     try {
       this.metrics.publishStoredMetrics();
     } catch (error) {
