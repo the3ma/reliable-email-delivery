@@ -5,6 +5,10 @@
 **Scheduled notification e-mail on AWS that is never sent twice, never lost silently, and never
 mailed to an address that bounced.**
 
+<a href="#delivery-console"><img src="docs/screenshots/01-dashboard.png" alt="Delivery Console dashboard: deliveries by state (sent, skipped, released, claimed, failed, ambiguous), kill switch, skip reasons and queue depths" width="880"></a>
+
+<sub>The Delivery Console over the local stack (<code>make demo</code>): every delivery ends in a named state.</sub>
+
 EventBridge + SQS + Lambda + DynamoDB + SES, in TypeScript and AWS CDK: claim-before-send
 idempotency, classified errors with partial batch responses, a timeout guard, bounce and complaint
 suppression, fail-safe kill switches and PII-free logs.
@@ -130,7 +134,7 @@ make demo    # everything + the console on http://localhost:8080 (Mailpit stays 
 | **Deliveries** - every delivery id with its state timeline. An `AMBIGUOUS` delivery explains itself: the lease expired mid-send, so it is not resent and an alarm fires.                            | ![Deliveries](docs/screenshots/03-deliveries.png) |
 | **Mailbox** - the local e-mail viewer. HTML is rendered in a fully sandboxed iframe (no scripts, forms or remote content); each e-mail links back to its delivery. A large digest arrives in parts. | ![Mailbox](docs/screenshots/04-mailbox.png)       |
 
-More: [dashboard](docs/screenshots/01-dashboard.png), [suppressions](docs/screenshots/05-suppressions.png),
+More: [dashboard](docs/screenshots/01-dashboard.png) (at the top), [suppressions](docs/screenshots/05-suppressions.png),
 [mobile, dark](docs/screenshots/06-mobile-dark.png). The console's API and pages are specified in
 [docs/CONSOLE.md](docs/CONSOLE.md); `npm run dev:mock` in `web/` runs the UI with no backend at all.
 
