@@ -32,6 +32,9 @@ suppression, fail-safe kill switches and PII-free logs.
 
 ## The problem
 
+> This story is a composite of problems I have met in production systems, not one company's
+> incident; product details and numbers are changed.
+
 A SaaS product e-mailed its users immediately for some events and as a daily digest for the rest: a
 scheduler found who to notify, a queue carried one message per e-mail, a processor sent it through
 SES and wrote "sent" to an acknowledgement table that the scheduler checked next time.

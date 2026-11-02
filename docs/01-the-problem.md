@@ -2,6 +2,9 @@
 
 ## Where we started
 
+> This story is a composite of problems I have met in production systems, not one company's
+> incident; product details and numbers are changed.
+
 A SaaS product e-mails its users when something happens - a report is ready, an invoice failed, a
 document was shared - either immediately or once a day as a digest. The first version was the
 obvious one:
