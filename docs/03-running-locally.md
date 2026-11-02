@@ -33,7 +33,8 @@ make smoke   # see below
 4. Publishing the same 100 requests again sends **nothing**.
 5. The digest sends one digest per user; running it again the same day sends **nothing**.
 6. With `send-emails = disabled`, nothing is sent and every message is recorded as `SKIPPED(disabled)`.
-7. A permanent bounce adds the address to the suppression list - as a hash, never the address.
+7. A permanent bounce of a delivered e-mail adds the address to the suppression list - as a hash,
+   never the address - and is recorded in the log of the delivery it belongs to.
 
 ## Doing things by hand
 
