@@ -5,6 +5,8 @@
 **Scheduled notification e-mail on AWS that is never sent twice, never lost silently, and never
 mailed to an address that bounced.**
 
+**[Read the case study →](https://the3ma.github.io/reliable-email-delivery/)** - the eleven failures, the architecture, six ADRs and the trade-offs.
+
 <a href="#delivery-console"><img src="docs/screenshots/01-dashboard.png" alt="Delivery Console dashboard: deliveries by state (sent, skipped, released, claimed, failed, ambiguous), kill switch, skip reasons and queue depths" width="880"></a>
 
 <sub>The Delivery Console over the local stack (<code>make demo</code>): every delivery ends in a named state.</sub>
@@ -72,7 +74,7 @@ The full analysis - eleven symptoms, their root causes and ten requirements - is
 | Fits DynamoDB                  | delivery-log items kept under a 380 KB budget with UTF-8-safe staged shedding                                            |
 | Off in seconds, safely         | SSM toggle (cached, stale-on-error, **disabled** when unreadable) + a deploy-time hard switch                            |
 | Scales the digest              | 16 hash segments, hourly, each picking users in their local morning; no scheduler retries                                |
-| Protects SES reputation        | `maxConcurrency` caps the send rate; bounce/complaint-rate alarms below AWS's review thresholds                          |
+| Protects SES reputation        | `maxConcurrency` caps the send rate; bounce/complaint-rate alarms at AWS's review level                                  |
 
 ## Architecture
 

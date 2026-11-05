@@ -9,3 +9,7 @@ templates/
 
 # web/ has its own prettier + eslint config and lockfile
 web/
+
+# The case study (GitHub Pages) is hand-laid HTML with inline SVG coordinates; keep it as written.
+docs/index.html
+docs/assets/

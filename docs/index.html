@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reliable email delivery · Case study</title>
+  <meta name="description" content="Case study: scheduled notification e-mail on AWS that is never sent twice, never lost silently and never mailed to an address that bounced - claim before send, classified errors, bounce suppression and fail-safe kill switches.">
+  <meta property="og:title" content="Reliable email delivery · Case study">
+  <meta property="og:description" content="Claim before you send: how a notification pipeline that sent one e-mail 118 times became one that sends each notification once, or tells a human why not.">
+  <meta property="og:type" content="article">
+  <meta name="color-scheme" content="dark light">
+  <link rel="preload" href="assets/fonts/overpass-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script>
+    // Saved theme before first paint; otherwise follow the system (dark-first stylesheet).
+    (function () {
+      var root = document.documentElement, saved = null;
+      try { saved = localStorage.getItem('theme'); } catch (e) {}
+      if (saved === 'light' || saved === 'dark') root.setAttribute('data-theme', saved);
+      var dark = saved ? saved === 'dark' : !window.matchMedia('(prefers-color-scheme: light)').matches;
+      root.setAttribute('data-resolved', dark ? 'dark' : 'light');
+    })();
+  </script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="product" href="#top"><span class="mark" aria-hidden="true"></span><strong><span class="long">Reliable email delivery</span><span class="short">Email delivery</span></strong><span class="sub">Case study</span></a>
+    <div class="topbar-actions">
+      <button class="btn btn-secondary btn-sm theme-toggle" type="button" id="theme-toggle" aria-pressed="false">
+        <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="label">Light theme</span>
+      </button>
+      <a class="btn btn-primary btn-sm topbar-contact" href="#contact" aria-label="Contact"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m2.5 4.5 5.5 4 5.5-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span class="label">Contact</span></a>
+    </div>
+  </div>
+  <div class="progress" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top" aria-labelledby="title">
+  <div class="wrap">
+    <h1 id="title">Claim the e-mail before you send it.</h1>
+    <p class="lead">How a notification pipeline that once sent the same e-mail 118 times became one that sends each notification once, or tells a human why not. Scheduled and immediate e-mail on AWS that is never sent twice, never lost silently and never mailed to an address that bounced, with every delivery ending in a named state. A public reference architecture in TypeScript and AWS CDK, generalized from production work, with its six key decisions recorded as ADRs.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#contact">Contact</a>
+      <a class="btn btn-secondary" href="#architecture">Read the architecture</a>
+    </div>
+
+    <figure class="hero-map" aria-labelledby="hm-t">
+      <div class="map-h"><div class="diagram" tabindex="0" role="region" aria-label="The line one notification rides">
+        <svg class="dg" viewBox="0 0 920 290" role="img" aria-labelledby="hm-t hm-d">
+          <title id="hm-t">The line one notification rides</title>
+          <desc id="hm-d">The send line runs through six stations: the notification is requested as an event on the bus, rendered as one e-mail per queue message, checked against the suppression list and the kill switch, claimed by the one conditional write that wins, handed to SES with the client never retrying on its own, and marked SENT, after which no error is ever thrown. From the claim, the fail line leads to AMBIGUOUS when the outcome is unknown: an alarm fires and the e-mail is never resent automatically. From the send, the feedback line leads to a bounce or complaint, which suppresses the address for every later send.</desc>
+          <path class="rail fail" d="M540,90 L540,180 Q540,214 506,214 L400,214"/>
+          <path class="rail feedback" d="M700,90 L700,180 Q700,214 734,214 L860,214"/>
+          <path class="rail send" d="M60,90 L860,90"/>
+
+          <circle class="stn send" cx="60" cy="90" r="11"/>
+          <circle class="stn send" cx="220" cy="90" r="11"/>
+          <circle class="stn send" cx="380" cy="90" r="11"/>
+          <circle class="stn ix" cx="540" cy="90" r="14"/>
+          <circle class="stn ix" cx="700" cy="90" r="14"/>
+          <circle class="stn term" cx="860" cy="90" r="13"/>
+          <circle class="stn term" cx="400" cy="214" r="13" style="fill:var(--l-fail);stroke:var(--l-fail)"/>
+          <circle class="stn term" cx="860" cy="214" r="13" style="fill:var(--l-feedback);stroke:var(--l-feedback)"/>
+
+          <text class="title" x="60" y="52" text-anchor="middle">Requested</text>
+          <text class="small" x="60" y="128" text-anchor="middle">event on the bus</text>
+          <text class="title" x="220" y="52" text-anchor="middle">Rendered</text>
+          <text class="small" x="220" y="128" text-anchor="middle">one e-mail per message</text>
+          <text class="title" x="380" y="52" text-anchor="middle">Checked</text>
+          <text class="small" x="380" y="128" text-anchor="middle">suppressed? disabled?</text>
+          <text class="title" x="540" y="52" text-anchor="middle">Claimed</text>
+          <text class="small lbl-bg" x="540" y="134" text-anchor="middle">one conditional write wins</text>
+          <text class="title" x="700" y="52" text-anchor="middle">Sent</text>
+          <text class="small lbl-bg" x="700" y="134" text-anchor="middle">SES, never auto-retried</text>
+          <text class="title" x="860" y="52" text-anchor="middle">Marked</text>
+          <text class="small" x="860" y="128" text-anchor="middle">SENT, then no throws</text>
+
+          <text class="title" x="400" y="254" text-anchor="middle">AMBIGUOUS</text>
+          <text class="small" x="400" y="272" text-anchor="middle">alarm, never resent</text>
+          <text class="title" x="860" y="254" text-anchor="middle">Suppressed</text>
+          <text class="small" x="860" y="272" text-anchor="middle">after a bounce or complaint</text>
+        </svg>
+      </div>
+      <p class="scroll-note">Swipe the map sideways to follow the whole line.</p></div>
+      <div class="map-v">
+        <svg class="dg" viewBox="0 0 340 580" role="img" aria-labelledby="hmv-t hmv-d"><title id="hmv-t">The line one notification rides, from the request to SENT, with the AMBIGUOUS and suppression branches</title><desc id="hmv-d">The send line from a requested notification through rendering, the suppression and kill-switch check, the claim and the send to SENT. Below it, an unknown outcome becomes AMBIGUOUS and alarms, and a bounce or complaint suppresses the address.</desc>
+          <path class="rail send" d="M40,30 L40,390"/>
+          <circle class="stn send" cx="40" cy="30" r="11"/><text class="title" x="72" y="28">Requested</text><text class="small" x="72" y="46">event on the bus</text>
+          <circle class="stn send" cx="40" cy="102" r="11"/><text class="title" x="72" y="100">Rendered</text><text class="small" x="72" y="118">one e-mail per message</text>
+          <circle class="stn send" cx="40" cy="174" r="11"/><text class="title" x="72" y="172">Checked</text><text class="small" x="72" y="190">suppressed? sending disabled?</text>
+          <circle class="stn ix" cx="40" cy="246" r="14"/><text class="title" x="72" y="244">Claimed</text><text class="small" x="72" y="262">one conditional write wins</text>
+          <circle class="stn ix" cx="40" cy="318" r="14"/><text class="title" x="72" y="316">Sent</text><text class="small" x="72" y="334">SES, never auto-retried</text>
+          <circle class="stn term" cx="40" cy="390" r="13"/><text class="title" x="72" y="388">Marked SENT</text><text class="small" x="72" y="406">nothing after it ever throws</text>
+          <circle class="stn fail" cx="40" cy="462" r="11"/><text class="title" x="72" y="460">AMBIGUOUS</text><text class="small" x="72" y="478">branch from the claim: alarm, never resent</text>
+          <circle class="stn term" cx="40" cy="534" r="13" style="fill:var(--l-feedback);stroke:var(--l-feedback)"/><text class="title" x="72" y="532">Suppressed</text><text class="small" x="72" y="550">branch from the send: bounce or complaint</text>
+        </svg>
+      </div>
+    </figure>
+
+    <dl class="meta">
+      <div><dt>My role</dt><dd>Author &amp; architect</dd></div>
+      <div><dt>Scope</dt><dd>Notifiers, processor, bounce feedback, AWS infrastructure, delivery console, runbook</dd></div>
+      <div><dt>Stack</dt><dd>TypeScript, Lambda, SQS, DynamoDB, SES, EventBridge, CDK</dd></div>
+      <div><dt>Status</dt><dd>Public reference; synthesized and tested in CI, not deployed &middot; <a href="https://github.com/the3ma/reliable-email-delivery">source on GitHub</a></dd></div>
+    </dl>
+  </div>
+</section>
+
+<div class="wrap layout">
+  <nav class="toc" aria-label="On this page">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#failures">The eleven failures</a></li>
+      <li><a href="#requirements">Requirements</a></li>
+      <li><a href="#users">Who it serves</a></li>
+      <li><a href="#product">The product</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#decisions">Decisions</a></li>
+      <li><a href="#implementation">Implementation</a></li>
+      <li><a href="#operations">Operations</a></li>
+      <li><a href="#tradeoffs">Trade-offs</a></li>
+      <li><a href="#results">Results</a></li>
+      <li><a href="#try">Try it</a></li>
+      <li><a href="#lessons">Lessons</a></li>
+      <li><a href="#next">What&rsquo;s next</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ol>
+  </nav>
+
+  <article class="article">
+    <details class="toc-mobile">
+      <summary><span>On this page</span><span class="toc-current"></span></summary>
+      <ol>
+        <li><a href="#summary">Summary</a></li>
+        <li><a href="#failures">The eleven failures</a></li>
+        <li><a href="#requirements">Requirements</a></li>
+        <li><a href="#users">Who it serves</a></li>
+        <li><a href="#product">The product</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#decisions">Decisions</a></li>
+        <li><a href="#implementation">Implementation</a></li>
+        <li><a href="#operations">Operations</a></li>
+        <li><a href="#tradeoffs">Trade-offs</a></li>
+        <li><a href="#results">Results</a></li>
+        <li><a href="#try">Try it</a></li>
+        <li><a href="#lessons">Lessons</a></li>
+        <li><a href="#next">What&rsquo;s next</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ol>
+    </details>
+
+    <!-- SUMMARY -->
+    <section class="section" id="summary" aria-labelledby="h-summary">
+      <h2 id="h-summary">Executive summary</h2>
+      <p class="intro">The whole story in thirty seconds.</p>
+      <div class="ruled-3">
+        <div><h3>The problem</h3><p>Over one week 87&nbsp;% of the &ldquo;immediate&rdquo; notification e-mails were duplicates, and one user got the same one 118 times. Around it, a timeout re-sent whole batches, bounced addresses kept being mailed and a content filter silently blocked every daily digest for days.</p></div>
+        <div><h3>The approach</h3><p>Claim each e-mail with a conditional write before sending it, classify every error as permanent, transient or unknown, close the bounce feedback loop, and give sending two kill switches that fail safe.</p></div>
+        <div><h3>The outcome</h3><p>Each notification goes out at most once, and every delivery ends in a named state: sent, skipped with a reason, failed with a reason, or ambiguous with an alarm for a human. No e-mail is lost silently.</p></div>
+      </div>
+    </section>
+
+    <!-- FAILURES -->
+    <section class="section" id="failures" aria-labelledby="h-failures">
+      <h2 id="h-failures">The eleven failures</h2>
+      <p class="intro">The first version was the obvious one: a scheduler, a queue, a processor that sent through SES and wrote &ldquo;sent&rdquo; afterwards. It worked, until it didn&rsquo;t.</p>
+      <div class="table-wrap">
+        <table class="stack-sm">
+          <thead><tr><th scope="col">Symptom</th><th scope="col">Root cause</th><th scope="col">Fixed by</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" data-label="Symptom">87&nbsp;% duplicates in a week; one user mailed 118 times</th><td data-label="Root cause">The &ldquo;already sent?&rdquo; check read a record written only <em>after</em> the send, while runs overlapped and retried</td><td data-label="Fixed by"><span class="fix">claim before send</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">One bad message retried into the dead-letter queue</th><td data-label="Root cause">Invalid input was thrown like a transient error</td><td data-label="Fixed by"><span class="fix">permanent errors, never retried</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">One failure re-sent the other nine e-mails of its batch</th><td data-label="Root cause">No partial batch responses</td><td data-label="Fixed by"><span class="fix">per-message retries</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">A slow call re-sent a whole batch</th><td data-label="Root cause">A Lambda timeout redelivers every record, sent or not</td><td data-label="Fixed by"><span class="fix">a remaining-time guard</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Errors after a successful send caused duplicates</th><td data-label="Root cause">A failed metrics flush marked a sent e-mail as failed</td><td data-label="Fixed by"><span class="fix">nothing after the send throws</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Large e-mails broke the audit log</th><td data-label="Root cause">The body went into a DynamoDB item, which tops out at 400&nbsp;KB</td><td data-label="Fixed by"><span class="fix">a 380&nbsp;KB item budget</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Addresses and bodies appeared in logs</th><td data-label="Root cause">The raw event was logged on error</td><td data-label="Fixed by"><span class="fix">masked, hashed, tested</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Every daily digest silently blocked for days</th><td data-label="Root cause">A &ldquo;suspicious content&rdquo; regex matched <code>content=</code> in a template&rsquo;s <code>&lt;meta&gt;</code> tags</td><td data-label="Fixed by"><span class="fix">escaping, not blocklists</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Hard bounces kept being mailed</th><td data-label="Root cause">Nothing consumed bounce and complaint events</td><td data-label="Fixed by"><span class="fix">a suppression list</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">A poison message sat in the DLQ unnoticed</th><td data-label="Root cause">No alarm, no documented redrive</td><td data-label="Fixed by"><span class="fix">DLQ alarms and a runbook</span></td></tr>
+            <tr><th scope="row" data-label="Symptom">Turning e-mail off needed a deployment</th><td data-label="Root cause">The switch was an environment variable</td><td data-label="Fixed by"><span class="fix">a fail-safe runtime toggle</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="source-note">A composite of problems met in production systems, not one company&rsquo;s incident; product details and numbers are changed. Full write-up: <a href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/01-the-problem.md">docs/01-the-problem.md</a>.</p>
+    </section>
+
+    <!-- REQUIREMENTS -->
+    <section class="section" id="requirements" aria-labelledby="h-requirements">
+      <h2 id="h-requirements">What the replacement had to guarantee</h2>
+      <p class="intro">Eleven failures became ten requirements: together they are the acceptance test for the design.</p>
+      <ul class="stations">
+        <li><strong>Never send twice</strong><span>Not across overlapping runs, retries, redeliveries, timeouts or crashes.</span></li>
+        <li><strong>Never lose one silently</strong><span>Every notification ends sent, skipped with a reason, failed with a reason, or flagged for a human.</span></li>
+        <li><strong>Classify every error</strong><span>Permanent errors are recorded once and never retried; transient ones are retried per message, never per batch.</span></li>
+        <li><strong>No timeout redelivers finished work</strong><span>A function that runs out of time must not send what already went out.</span></li>
+        <li><strong>Respect bounces and complaints</strong><span>An address that bounced permanently or complained is never mailed again.</span></li>
+        <li><strong>No recipient data in logs</strong><span>Addresses and bodies stay out of logs and metrics.</span></li>
+        <li><strong>Safe templates by construction</strong><span>Escaping by default, not content blocklists.</span></li>
+        <li><strong>Off in seconds, and fail safe</strong><span>No deployment to stop sending, and a switch that can&rsquo;t be read means &ldquo;off&rdquo;.</span></li>
+        <li><strong>Capped send rate</strong><span>Protect the SES quota and the sender&rsquo;s reputation.</span></li>
+        <li><strong>Every failure visible</strong><span>Dead-letter queues, ambiguous deliveries, bounce and complaint rates, all alarmed.</span></li>
+      </ul>
+    </section>
+
+    <!-- USERS -->
+    <section class="section" id="users" aria-labelledby="h-users">
+      <h2 id="h-users">Who it serves</h2>
+      <p class="intro">Notification e-mail has three audiences, and each one was let down by a different failure.</p>
+      <div class="ruled-3 personas">
+        <article class="persona">
+          <h3>Recipients</h3>
+          <p class="role">The product&rsquo;s users</p>
+          <dl>
+            <div><dt>Job</dt><dd>Hear about a report, an invoice or a shared document once, on time, and get a digest in their own morning.</dd></div>
+            <div><dt>Pain points</dt><dd>The same notification many times over; digests that never arrived.</dd></div>
+            <div><dt>What they got</dt><dd>One e-mail per notification, and at most one digest per local day.</dd></div>
+          </dl>
+        </article>
+        <article class="persona">
+          <h3>Operators</h3>
+          <p class="role">Keep e-mail flowing, and stop it fast</p>
+          <dl>
+            <div><dt>Job</dt><dd>Notice a problem before users do and stop a bad send fast.</dd></div>
+            <div><dt>Pain points</dt><dd>A DLQ with no alarm, poison messages retried, a deployment just to switch sending off.</dd></div>
+            <div><dt>What they got</dt><dd>A fail-safe kill switch, alarms on every DLQ and on ambiguous deliveries, and a runbook for each.</dd></div>
+          </dl>
+        </article>
+        <article class="persona">
+          <h3>Privacy &amp; deliverability</h3>
+          <p class="role">Protect user data and the right to send</p>
+          <dl>
+            <div><dt>Job</dt><dd>Keep the sending account in good standing and recipient data out of logs.</dd></div>
+            <div><dt>Pain points</dt><dd>Bounced addresses kept being mailed; addresses in logs; a regex that blocked mail silently.</dd></div>
+            <div><dt>What they got</dt><dd>A suppression list fed by SES, bounce and complaint alarms at AWS&rsquo;s review level, before its pause level, PII-free logs checked by a test.</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <!-- PRODUCT -->
+    <section class="section" id="product" aria-labelledby="h-product">
+      <h2 id="h-product">The product</h2>
+      <p class="intro">A local Delivery Console makes the guarantees visible: run a scenario, watch deliveries move through their states, open the e-mail each one produced.</p>
+      <figure class="shot">
+        <picture>
+          <source media="(max-width: 560px)" srcset="screenshots/06-mobile-dark.png" width="375" height="812">
+          <img src="screenshots/01-dashboard.png" width="1440" height="900" loading="lazy" decoding="async" alt="Delivery Console dashboard: deliveries counted by state (sent, skipped, released, claimed, failed, ambiguous), the kill switch, skip reasons and queue depths.">
+        </picture>
+        <figcaption><p>The dashboard over the local stack (<code>make demo</code>). The console runs only against LocalStack and Mailpit and is never deployed; in AWS the same facts live in DynamoDB, CloudWatch and SES.</p></figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="screenshots/02-scenarios.png" width="1440" height="900" loading="lazy" decoding="async" alt="Delivery Console scenarios page: one-click scenarios, each with its expected outcome next to the observed one.">
+        <figcaption><p>The old system&rsquo;s failure as a one-click scenario: the same 10 notifications published 12 times concurrently produce exactly 10 e-mails.</p></figcaption>
+      </figure>
+    </section>
+
+    <!-- ARCHITECTURE -->
+    <section class="section" id="architecture" aria-labelledby="h-architecture">
+      <h2 id="h-architecture">Solution architecture</h2>
+      <p class="intro">Deciding who gets what is slow and data-heavy; handing one e-mail to SES is fast and must be retried per message. So the two are split by a queue, and the processor does nothing but claim, send and record.</p>
+      <ul class="legend" aria-label="Legend">
+        <li><i></i>Send line</li>
+        <li><i class="feedback"></i>Feedback line</li>
+        <li><i class="fail"></i>Fail line</li>
+      </ul>
+      <div class="figures">
+        <figure>
+          <header><h3>System map</h3><span>Figure 1</span></header>
+          <div class="diagram" tabindex="0" role="region" aria-label="System map diagram">
+            <svg class="dg" viewBox="0 0 920 440" role="img" aria-labelledby="f1-t f1-d">
+              <title id="f1-t">System map</title>
+              <desc id="f1-d">The product publishes a notification event to an EventBridge bus, which feeds the immediate notifier through an intake queue. EventBridge Scheduler runs the digest notifier hourly in 16 segments with retries off. Both notifiers render one e-mail per message onto the email queue, which delivers batches of ten to the processor with partial failures and a capped concurrency. The processor checks the suppression list, claims and marks each delivery in the deliveries table and sends through Amazon SES with a configuration set. On the feedback line, SES publishes bounce and complaint events through EventBridge to the feedback function, which writes the hashed address to the suppression list. On the fail line, dead-letter queues and ambiguous deliveries raise alarms.</desc>
+              <text class="small" x="135" y="36" text-anchor="middle">PRODUCT AND SCHEDULE</text>
+              <text class="small" x="460" y="36" text-anchor="middle">NOTIFIERS AND STATE</text>
+              <text class="small" x="785" y="36" text-anchor="middle">DELIVERY (PROCESSOR)</text>
+              <!-- rails -->
+              <path class="rail send" d="M135,116 L135,160"/>
+              <path class="rail send" d="M230,188 L365,188"/>
+              <path class="rail send" d="M230,388 L365,388"/>
+              <path class="rail send" d="M460,216 L460,260"/>
+              <path class="rail send" d="M460,360 L460,316"/>
+              <path class="rail send" d="M555,288 L640,288 L640,200 L690,200"/>
+              <path class="rail send" d="M690,176 L620,176 L620,88 L555,88"/>
+              <path class="rail send" d="M785,216 L785,260"/>
+              <path class="rail feedback" d="M785,160 L785,116"/>
+              <path class="rail feedback" d="M785,316 L785,360"/>
+              <path class="rail feedback" d="M880,388 L900,388 L900,88 L880,88"/>
+              <path class="rail fail" d="M365,300 L230,300"/>
+              <!-- boxes -->
+              <rect class="box" x="40" y="60" width="190" height="56" rx="10"/><text class="title" x="135" y="84" text-anchor="middle">Product</text><text class="small" x="135" y="102" text-anchor="middle">notification.requested</text>
+              <rect class="ext" x="40" y="160" width="190" height="56" rx="10"/><text class="title" x="135" y="184" text-anchor="middle">EventBridge bus</text><text class="small" x="135" y="202" text-anchor="middle">events in, never mail</text>
+              <rect class="ext" x="40" y="272" width="190" height="56" rx="10"/><text class="title" x="135" y="296" text-anchor="middle">Alarms</text><text class="small" x="135" y="314" text-anchor="middle">DLQs, ambiguous, rates</text>
+              <rect class="ext" x="40" y="360" width="190" height="56" rx="10"/><text class="title" x="135" y="384" text-anchor="middle">Scheduler</text><text class="small" x="135" y="402" text-anchor="middle">16 segments, no retries</text>
+              <rect class="ext" x="365" y="60" width="190" height="56" rx="10"/><text class="title" x="460" y="84" text-anchor="middle">Deliveries</text><text class="small" x="460" y="102" text-anchor="middle">claim, lease, state</text>
+              <rect class="box" x="365" y="160" width="190" height="56" rx="10"/><text class="title" x="460" y="184" text-anchor="middle">Notifier, immediate</text><text class="small" x="460" y="202" text-anchor="middle">via intake queue + DLQ</text>
+              <rect class="ext" x="365" y="260" width="190" height="56" rx="10"/><text class="title" x="460" y="284" text-anchor="middle">Email queue + DLQ</text><text class="small" x="460" y="302" text-anchor="middle">one rendered e-mail each</text>
+              <rect class="box" x="365" y="360" width="190" height="56" rx="10"/><text class="title" x="460" y="384" text-anchor="middle">Notifier, digest</text><text class="small" x="460" y="402" text-anchor="middle">local morning, once a day</text>
+              <rect class="ext" x="690" y="60" width="190" height="56" rx="10"/><text class="title" x="785" y="84" text-anchor="middle">Suppressions</text><text class="small" x="785" y="102" text-anchor="middle">SHA-256 of the address</text>
+              <rect class="box" x="690" y="160" width="190" height="56" rx="10"/><text class="title" x="785" y="184" text-anchor="middle">Processor</text><text class="small" x="785" y="202" text-anchor="middle">claim, send, record</text>
+              <rect class="ext" x="690" y="260" width="190" height="56" rx="10"/><text class="title" x="785" y="284" text-anchor="middle">Amazon SES</text><text class="small" x="785" y="302" text-anchor="middle">configuration set</text>
+              <rect class="box" x="690" y="360" width="190" height="56" rx="10"/><text class="title" x="785" y="384" text-anchor="middle">Feedback</text><text class="small" x="785" y="402" text-anchor="middle">bounce, complaint</text>
+              <!-- line labels -->
+              <text class="small lbl" x="297" y="180" text-anchor="middle">intake</text>
+              <text class="small lbl" x="297" y="380" text-anchor="middle">hourly</text>
+              <text class="small lbl" x="640" y="248" text-anchor="middle">batch 10</text>
+              <text class="small" x="612" y="140" text-anchor="end">claim, mark</text>
+              <text class="small lbl" x="785" y="242" text-anchor="middle">SendEmail</text>
+              <text class="small lbl" x="785" y="342" text-anchor="middle">events</text>
+              <text class="small lbl" x="785" y="142" text-anchor="middle">check</text>
+              <text class="small lbl" x="297" y="292" text-anchor="middle">alarm</text>
+            </svg>
+          </div>
+          <figcaption><p>The notifiers never call SES, and the processor never renders or looks anything up except the suppression list and the delivery state. The send rate is set in exactly one place: the processor&rsquo;s event-source concurrency cap. Left out for clarity: the pending-digest table between the two notifiers and the SSM toggles the processor reads.</p></figcaption>
+        </figure>
+        <div class="table-wrap">
+          <table class="stack-sm">
+            <thead><tr><th scope="col">Piece</th><th scope="col">Locally (docker compose)</th><th scope="col">On AWS (CDK)</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" data-label="Piece">Event bus, queues, tables, toggles</th><td data-label="Locally (docker compose)">LocalStack</td><td data-label="On AWS (CDK)">EventBridge, SQS with KMS, DynamoDB with KMS and point-in-time recovery, SSM</td></tr>
+              <tr><th scope="row" data-label="Piece">Notifiers, processor</th><td data-label="Locally (docker compose)">Long-polling worker containers, same handlers</td><td data-label="On AWS (CDK)">Lambda with SQS event sources</td></tr>
+              <tr><th scope="row" data-label="Piece">Digest schedule</th><td data-label="Locally (docker compose)">A job per segment</td><td data-label="On AWS (CDK)">EventBridge Scheduler, 16 schedules</td></tr>
+              <tr><th scope="row" data-label="Piece">Mail</th><td data-label="Locally (docker compose)">Mailpit over SMTP</td><td data-label="On AWS (CDK)">SES v2 with a configuration set</td></tr>
+              <tr><th scope="row" data-label="Piece">Bounces, complaints</th><td data-label="Locally (docker compose)">A job that builds the same event</td><td data-label="On AWS (CDK)">SES &rarr; EventBridge &rarr; feedback function</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- DECISIONS -->
+    <section class="section" id="decisions" aria-labelledby="h-decisions">
+      <h2 id="h-decisions">Decisions</h2>
+      <p class="intro">Six architecture decision records, one per hard constraint: e-mail can&rsquo;t be taken back, queues redeliver, functions time out, SES watches bounce rates, mistakes need an off switch, and users live in many time zones.</p>
+      <div class="ledger">
+        <article class="ledger-row lead">
+          <div class="ledger-head"><h3>Claim before send; at-most-once with an alarmed AMBIGUOUS state</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0002-at-most-once-with-ambiguous-alarm.md">ADR-0002</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>Once SES accepts an e-mail it can&rsquo;t be taken back, and SES has no idempotency key. A &ldquo;sent&rdquo; record written after the send let every overlap send again.</dd></div>
+            <div><dt>Decision</dt><dd>A deterministic delivery id, claimed by a conditional write with a 120-second lease before the send. An unknown outcome becomes <code>AMBIGUOUS</code>: alarmed, never resent.</dd></div>
+            <div class="why"><dt>Result</dt><dd>No duplicate from overlaps, retries, redeliveries or partial batches. The rare crash leaves a missing e-mail a human sees, never a silent one.</dd></div>
+          </dl>
+        </article>
+        <article class="ledger-row lead">
+          <div class="ledger-head"><h3>Classify every error; retry per message, never per batch</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0003-classify-errors-and-partial-batches.md">ADR-0003</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>Invalid messages were retried, one failure failed the whole batch, and a timeout redelivered everything.</dd></div>
+            <div><dt>Decision</dt><dd>Permanent, transient and unknown-outcome classes; partial batch responses; a guard that hands records back 30 seconds before the deadline; nothing after the send is re-thrown.</dd></div>
+            <div class="why"><dt>Result</dt><dd>A poison message costs one log line, and a timeout can never resend e-mails that already went out.</dd></div>
+          </dl>
+        </article>
+        <article class="ledger-row">
+          <div class="ledger-head"><h3>Split rendering from delivery</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0001-split-notifier-and-processor.md">ADR-0001</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>One function did slow, batch-shaped recipient work and fast, per-message sending under one retry policy.</dd></div>
+            <div><dt>Decision</dt><dd>Notifiers render one complete e-mail per queue message; the processor only claims, sends and records.</dd></div>
+            <div class="why"><dt>Result</dt><dd>A processor small enough to reason about every failure path, and one place that sets the send rate.</dd></div>
+          </dl>
+        </article>
+        <article class="ledger-row">
+          <div class="ledger-head"><h3>Close the feedback loop: bounces and complaints suppress</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0004-suppression-from-ses-feedback.md">ADR-0004</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>Nothing consumed bounce events, and SES reviews an account at about a 5&nbsp;% bounce rate.</dd></div>
+            <div><dt>Decision</dt><dd>A configuration set publishes events to EventBridge; permanent bounces and complaints go on a suppression list keyed by the address&rsquo;s SHA-256.</dd></div>
+            <div class="why"><dt>Result</dt><dd>One bounce stops all future mail to that address, and alarms fire at SES&rsquo;s review level, well before it pauses sending.</dd></div>
+          </dl>
+        </article>
+        <article class="ledger-row">
+          <div class="ledger-head"><h3>Two kill switches, both fail safe</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0005-fail-safe-kill-switches.md">ADR-0005</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>Stopping a bad send must take seconds, and a switch that can&rsquo;t be read must not mean &ldquo;send&rdquo;.</dd></div>
+            <div><dt>Decision</dt><dd>An SSM toggle cached for 5 minutes, disabled when nothing can be read; plus a deploy-time switch where anything but <code>false</code> disables sending.</dd></div>
+            <div class="why"><dt>Result</dt><dd>Off without a deployment, and a typo or a missing value can never turn sending on.</dd></div>
+          </dl>
+        </article>
+        <article class="ledger-row">
+          <div class="ledger-head"><h3>The daily digest as independent segments, in local time</h3><a class="adr" href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/adr/0006-segmented-digest-in-local-time.md">ADR-0006</a></div>
+          <dl>
+            <div><dt>Context</dt><dd>One daily job grows into the 15-minute Lambda limit, a retry re-sends to everyone, and 00:00 UTC is someone&rsquo;s night.</dd></div>
+            <div><dt>Decision</dt><dd>16 segments run hourly with retries off; each picks the users whose local morning it is. The local date is part of the delivery id.</dd></div>
+            <div class="why"><dt>Result</dt><dd>Each run is a sixteenth of the work and safe to re-run; one digest per user per local day.</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <!-- IMPLEMENTATION -->
+    <section class="section" id="implementation" aria-labelledby="h-implementation">
+      <h2 id="h-implementation">Implementation</h2>
+      <p class="intro">Two mechanisms carry the guarantees: the state machine every delivery goes through, and the loop that turns a bounce into a suppression.</p>
+      <div class="figures">
+        <figure>
+          <header><h3>Every delivery ends in a named state</h3><span>Figure 2</span></header>
+          <div class="diagram" tabindex="0" role="region" aria-label="Delivery state diagram">
+            <svg class="dg" viewBox="0 0 920 300" role="img" aria-labelledby="f2-t f2-d">
+              <title id="f2-t">Every delivery ends in a named state</title>
+              <desc id="f2-d">A new delivery id is claimed by the one conditional write that wins, then handed to SES with a single attempt, and marked SENT, after which no error is thrown. A suppressed recipient, disabled sending or an invalid message is SKIPPED before any claim. At the send, a throttling or 5xx error releases the claim so a retry can claim it again; an SES rejection is FAILED_PERMANENT and recorded once; an unknown outcome or an expired lease becomes AMBIGUOUS, which alarms and is never resent automatically.</desc>
+              <path class="rail muted" d="M90,100 L90,240"/>
+              <path class="rail muted" d="M548,110 C 500,170 420,240 330,240"/>
+              <path class="rail fail" d="M560,100 L560,240"/>
+              <path class="rail fail" d="M560,170 Q560,240 630,240 L790,240"/>
+              <path class="rail send" d="M90,100 L820,100"/>
+              <circle class="stn send" cx="90" cy="100" r="11"/>
+              <circle class="stn ix" cx="320" cy="100" r="14"/>
+              <circle class="stn ix" cx="560" cy="100" r="14"/>
+              <circle class="stn term" cx="820" cy="100" r="13"/>
+              <circle class="stn" cx="90" cy="240" r="11"/>
+              <circle class="stn" cx="330" cy="240" r="11"/>
+              <circle class="stn fail" cx="560" cy="240" r="11"/>
+              <circle class="stn term" cx="790" cy="240" r="13" style="fill:var(--l-fail);stroke:var(--l-fail)"/>
+              <text class="title" x="40" y="54">New delivery id</text>
+              <text class="small" x="40" y="76">hash of user, category, entity, period</text>
+              <text class="title" x="320" y="54" text-anchor="middle">Claim</text>
+              <text class="small" x="320" y="138" text-anchor="middle">one conditional write wins,</text><text class="small" x="320" y="154" text-anchor="middle">lease 120 s</text>
+              <text class="title" x="560" y="54" text-anchor="middle">SendEmail</text>
+              <text class="small" x="560" y="76" text-anchor="middle">SES, one attempt</text>
+              <text class="title" x="820" y="54" text-anchor="middle">SENT</text>
+              <text class="small" x="820" y="138" text-anchor="middle">later errors caught,</text><text class="small" x="820" y="154" text-anchor="middle">never thrown</text>
+              <text class="title" x="90" y="276" text-anchor="middle">SKIPPED</text>
+              <text class="small" x="90" y="294" text-anchor="middle">suppressed, disabled, invalid</text>
+              <text class="title" x="330" y="276" text-anchor="middle">RELEASED</text>
+              <text class="small" x="330" y="294" text-anchor="middle">throttled or 5xx: claim again</text>
+              <text class="title" x="560" y="276" text-anchor="middle">FAILED_PERMANENT</text>
+              <text class="small" x="560" y="294" text-anchor="middle">SES rejected, recorded once</text>
+              <text class="title" x="790" y="276" text-anchor="middle">AMBIGUOUS</text>
+              <text class="small" x="790" y="294" text-anchor="middle">unknown outcome: alarm</text>
+            </svg>
+          </div>
+          <figcaption><p>A worker that loses the claim finds <code>SENT</code> and drops its copy, or finds a live claim and retries later. A worker that dies between the send and the mark leaves an expired lease: the e-mail may or may not be out, so it becomes <code>AMBIGUOUS</code> instead of being sent again. The SES client itself never retries a send.</p></figcaption>
+        </figure>
+
+        <figure>
+          <header><h3>Closing the feedback loop</h3><span>Figure 3</span></header>
+          <div class="diagram" tabindex="0" role="region" aria-label="Feedback loop diagram">
+            <svg class="dg" viewBox="0 0 920 180" role="img" aria-labelledby="f3-t f3-d">
+              <title id="f3-t">Closing the feedback loop</title>
+              <desc id="f3-d">SES publishes bounce, complaint and delivery events for the configuration set to EventBridge. The feedback function keeps only permanent bounces and complaints and writes the SHA-256 of the address to the suppression list. The processor checks that list before claiming, so a suppressed recipient is SKIPPED and never retried.</desc>
+              <path class="rail feedback" d="M80,80 L860,80"/>
+              <circle class="stn feedback" cx="80" cy="80" r="11"/>
+              <circle class="stn feedback" cx="236" cy="80" r="11"/>
+              <circle class="stn feedback" cx="392" cy="80" r="11"/>
+              <circle class="stn ix" cx="548" cy="80" r="14"/>
+              <circle class="stn feedback" cx="704" cy="80" r="11"/>
+              <circle class="stn term" cx="860" cy="80" r="13" style="fill:var(--l-feedback);stroke:var(--l-feedback)"/>
+              <text class="title" x="80" y="44" text-anchor="middle">SES event</text>
+              <text class="small" x="80" y="118" text-anchor="middle">bounce, complaint,</text><text class="small" x="80" y="134" text-anchor="middle">delivery</text>
+              <text class="title" x="236" y="44" text-anchor="middle">EventBridge</text>
+              <text class="small" x="236" y="118" text-anchor="middle">from the</text><text class="small" x="236" y="134" text-anchor="middle">configuration set</text>
+              <text class="title" x="392" y="44" text-anchor="middle">Feedback</text>
+              <text class="small" x="392" y="118" text-anchor="middle">permanent only;</text><text class="small" x="392" y="134" text-anchor="middle">transient is logged</text>
+              <text class="title" x="548" y="44" text-anchor="middle">Suppressions</text>
+              <text class="small" x="548" y="118" text-anchor="middle">SHA-256 of the address,</text><text class="small" x="548" y="134" text-anchor="middle">never the address</text>
+              <text class="title" x="704" y="44" text-anchor="middle">Processor</text>
+              <text class="small" x="704" y="118" text-anchor="middle">checks before</text><text class="small" x="704" y="134" text-anchor="middle">claiming</text>
+              <text class="title" x="860" y="44" text-anchor="middle">SKIPPED</text>
+              <text class="small" x="860" y="118" text-anchor="middle">suppressed,</text><text class="small" x="860" y="134" text-anchor="middle">never retried</text>
+            </svg>
+          </div>
+          <figcaption><p>The delivery id travels as an SES message tag, so every feedback event joins back to its delivery log. Bounce-rate and complaint-rate alarms fire at 5&nbsp;% and 0.1&nbsp;%, where SES starts a review, not where it pauses sending.</p></figcaption>
+        </figure>
+      </div>
+
+      <h3 class="subhead">Three kinds of error, three different actions</h3>
+      <div class="table-wrap">
+        <table class="stack-sm">
+          <thead><tr><th scope="col">Class</th><th scope="col">Examples</th><th scope="col">Action</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" data-label="Class">Permanent</th><td data-label="Examples">invalid JSON or schema, suppressed recipient, sending disabled, SES rejection</td><td data-label="Action">record the reason once, delete the message</td></tr>
+            <tr><th scope="row" data-label="Class">Transient</th><td data-label="Examples">SES throttling, 5xx, network errors, a live claim held elsewhere</td><td data-label="Action">release the claim, return only that record to the queue</td></tr>
+            <tr><th scope="row" data-label="Class">Unknown outcome</th><td data-label="Examples">a timeout or connection reset after the request went out</td><td data-label="Action"><code>AMBIGUOUS</code>, alarm, no retry</td></tr>
+            <tr><th scope="row" data-label="Class">After the send</th><td data-label="Examples">delivery-log write, the mark, the metrics flush</td><td data-label="Action">catch, log, count; never re-throw</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- OPERATIONS -->
+    <section class="section" id="operations" aria-labelledby="h-operations">
+      <h2 id="h-operations">Running it in production</h2>
+      <p class="intro">Every alarm has a runbook entry, and the first one is how to stop all mail.</p>
+      <ul class="stations">
+        <li><strong>Stop all sending now</strong><span>Flip the SSM toggle; disabled notifications are recorded as <code>SKIPPED(disabled)</code>, not queued to burst out later.</span></li>
+        <li><strong>Dead-letter queues</strong><span>Every DLQ alarms; once the cause is fixed, the runbook redrives it with <code>StartMessageMoveTask</code>.</span></li>
+        <li><strong>Ambiguous deliveries</strong><span>Look up the SES events by delivery id: an event means it was sent, so mark it <code>SENT</code>; none after an hour means release it and re-request, and the next claim sends it once.</span></li>
+        <li><strong>Queue age</strong><span>An alarm fires when the oldest message in the email queue is more than 15 minutes old.</span></li>
+        <li><strong>Bounce and complaint spikes</strong><span>Alarms at the review level: find the category or template behind it, and disable sending if the list or template is bad.</span></li>
+        <li><strong>Unsuppressing an address</strong><span>A deliberate, manual action; manual entries are the audit trail.</span></li>
+        <li><strong>A failed digest segment</strong><span>Alarmed and re-run by hand; idempotent, so a re-run never sends twice.</span></li>
+        <li><strong>Going live</strong><span>Production starts with sending disabled: verify the domain, leave the SES sandbox, then enable.</span></li>
+      </ul>
+    </section>
+
+    <!-- TRADE-OFFS -->
+    <section class="section" id="tradeoffs" aria-labelledby="h-tradeoffs">
+      <h2 id="h-tradeoffs">Trade-offs</h2>
+      <p class="intro">Every decision gave something up. These are the costs the ADRs accept on purpose.</p>
+      <div class="table-wrap">
+        <table class="stack-sm">
+          <thead><tr><th scope="col">Chose</th><th scope="col">Instead of</th><th scope="col">The cost, and why it&rsquo;s worth it</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" data-label="Chose">At-most-once with an alarmed AMBIGUOUS state</th><td data-label="Instead of">At-least-once: resend when unsure</td><td data-label="The cost, and why it's worth it">In the rare crash window an e-mail can be missing until a human looks. A duplicate is visible to the user and erodes trust; a missing one is alarmed.</td></tr>
+            <tr><th scope="row" data-label="Chose">A claim in DynamoDB</th><td data-label="Instead of">SQS FIFO content-based deduplication</td><td data-label="The cost, and why it's worth it">One more table and a lease to tune. FIFO deduplicates for 5 minutes; digests and retries span hours.</td></tr>
+            <tr><th scope="row" data-label="Chose">Scheduler retries off</th><td data-label="Instead of">Automatic retries of a failed segment</td><td data-label="The cost, and why it's worth it">A failed segment waits for a person. A retry on top of a run that may still be sending is how the 118-times duplicate began.</td></tr>
+            <tr><th scope="row" data-label="Chose">Drop mail while disabled</th><td data-label="Instead of">Hold it until sending resumes</td><td data-label="The cost, and why it's worth it">Skipped notifications must be re-requested, but switching back on never releases a burst of stale mail.</td></tr>
+            <tr><th scope="row" data-label="Chose">A 500&nbsp;KiB message cap</th><td data-label="Instead of">One message per digest, whatever its size</td><td data-label="The cost, and why it's worth it">Large digests arrive in parts, each with its own delivery id; ten messages always fit one Lambda invocation.</td></tr>
+            <tr><th scope="row" data-label="Chose">A capped send rate</th><td data-label="Instead of">Sending as fast as Lambda scales</td><td data-label="The cost, and why it's worth it">Bursts wait in the queue, so SES throttling stays rare and the sender&rsquo;s reputation is protected.</td></tr>
+            <tr><th scope="row" data-label="Chose">A toggle cached for 5 minutes</th><td data-label="Instead of">Reading the switch on every send</td><td data-label="The cost, and why it's worth it">Up to 5 minutes to take effect, in exchange for a stale-but-safe value when SSM is unavailable.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- RESULTS -->
+    <section class="section" id="results" aria-labelledby="h-results">
+      <h2 id="h-results">Results</h2>
+      <p class="intro">Every requirement maps to a mechanism, and the end-to-end guarantees run in CI on every change.</p>
+      <ul class="stations">
+        <li><strong>Each notification sent at most once</strong><span>Overlaps, retries, redeliveries, partial batches and timeouts all map to one claimed delivery id.</span></li>
+        <li><strong>Nothing lost silently</strong><span>Every delivery ends in a named state; the unknown ones alarm.</span></li>
+        <li><strong>Bounced addresses never mailed again</strong><span>SES feedback becomes a suppression list checked before every claim.</span></li>
+        <li><strong>Off without a deployment, safely</strong><span>A runtime toggle that takes effect within its 5-minute cache, and reads as &ldquo;off&rdquo; when it can&rsquo;t be read.</span></li>
+        <li><strong>No recipient data in logs</strong><span>Addresses masked or hashed, bodies never logged; a test scans every log line.</span></li>
+        <li><strong>Verified, not asserted</strong><span>A compose smoke test runs duplicates, re-publish, digests, suppression, the kill switch and bounce feedback in CI.</span></li>
+      </ul>
+      <h3 class="subhead">What the CI smoke test showed on its last run</h3>
+      <div class="table-wrap">
+        <table class="stack-sm">
+          <thead><tr><th scope="col">Scenario</th><th scope="col">Outcome</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" data-label="Scenario">100 requests, with duplicates and invalid ones</th><td data-label="Outcome">24 e-mails, one per delivery id; 2 skipped as suppressed; both DLQs empty</td></tr>
+            <tr><th scope="row" data-label="Scenario">The same requests published again</th><td data-label="Outcome">0 new e-mails</td></tr>
+            <tr><th scope="row" data-label="Scenario">The daily digest, run twice</th><td data-label="Outcome">24 digests, then 0</td></tr>
+            <tr><th scope="row" data-label="Scenario">Sending disabled</th><td data-label="Outcome">5 recorded as <code>SKIPPED(disabled)</code>, 0 sent</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="subhead">System figures</h3>
+      <div class="table-wrap">
+        <table class="stack-sm">
+          <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Why</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" data-label="Setting">Claim lease</th><td class="num" data-label="Value">120 s</td><td data-label="Why">Longer than any send; shorter than the queue&rsquo;s visibility timeout.</td></tr>
+            <tr><th scope="row" data-label="Setting">Remaining-time guard</th><td class="num" data-label="Value">30 s</td><td data-label="Why">The function finishes instead of timing out mid-batch.</td></tr>
+            <tr><th scope="row" data-label="Setting">Receives before the DLQ</th><td class="num" data-label="Value">3</td><td data-label="Why">Retries for transient errors, then an alarm.</td></tr>
+            <tr><th scope="row" data-label="Setting">Queue visibility timeout</th><td class="num" data-label="Value">6&times; the function timeout</td><td data-label="Why">AWS guidance for SQS event sources.</td></tr>
+            <tr><th scope="row" data-label="Setting">Delivery-log item budget</th><td class="num" data-label="Value">380 KB</td><td data-label="Why">Under DynamoDB&rsquo;s 400 KB item limit, with staged shedding.</td></tr>
+            <tr><th scope="row" data-label="Setting">Digest segments</th><td class="num" data-label="Value">16, hourly</td><td data-label="Why">Each run is a sixteenth of the work.</td></tr>
+            <tr><th scope="row" data-label="Setting">Bounce / complaint alarms</th><td class="num" data-label="Value">5&nbsp;% / 0.1&nbsp;%</td><td data-label="Why">At SES&rsquo;s review level, before its pause level.</td></tr>
+            <tr><th scope="row" data-label="Setting">Running cost</th><td class="num" data-label="Value">about $6 / month fixed</td><td data-label="Why">100,000 e-mails a month come to roughly $15&ndash;25 at us-east-1 list prices.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="source-note">Configuration values and the smoke-test run from the repository&rsquo;s documentation. Not verified here: a live AWS deployment. The stack synthesizes and is tested, but the author has not deployed it; production volumes are not published.</p>
+    </section>
+
+    <!-- TRY IT -->
+    <section class="section" id="try" aria-labelledby="h-try">
+      <h2 id="h-try">Try it yourself</h2>
+      <p class="intro">The whole stack runs locally with Docker: LocalStack for EventBridge, SQS, DynamoDB and SSM, and Mailpit in place of SES.</p>
+<pre class="terminal" aria-label="Commands to run the project locally"><span class="p">$ </span>git clone https://github.com/the3ma/reliable-email-delivery.git
+<span class="p">$ </span>cd reliable-email-delivery
+<span class="p">$ </span>make up      <span class="c"># localstack, mailpit, both workers</span>
+<span class="p">$ </span>make seed    <span class="c"># 40 users across 12 time zones, every 10th pre-suppressed</span>
+<span class="p">$ </span>make smoke   <span class="c"># publish -> dedup -> suppression -> digest -> kill switch -> bounce</span>
+<span class="p">$ </span>make demo    <span class="c"># the Delivery Console on http://localhost:8080</span></pre>
+      <p class="source-note">Every e-mail lands in Mailpit at <code>http://localhost:8025</code>. More in <a href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/03-running-locally.md">docs/03-running-locally.md</a> and the <a href="https://github.com/the3ma/reliable-email-delivery/blob/main/docs/04-operations-runbook.md">operations runbook</a>.</p>
+    </section>
+
+    <!-- LESSONS -->
+    <section class="section" id="lessons" aria-labelledby="h-lessons">
+      <h2 id="h-lessons">Lessons</h2>
+      <p class="intro">What carries over to the next system with a side effect that can&rsquo;t be undone.</p>
+      <ul class="stations">
+        <li><strong>Claim before the side effect.</strong><span>A check that relies on a record written after the action can&rsquo;t stop the duplicate it was built for.</span></li>
+        <li><strong>Unknown is a state, not a retry.</strong><span>When software can&rsquo;t know whether it already acted, the safe move is to stop and tell a person.</span></li>
+        <li><strong>A kill switch must fail closed.</strong><span>If the switch can&rsquo;t be read, it means off.</span></li>
+        <li><strong>Blocklists fail silently.</strong><span>Escape by default and treat a missing variable as an error: a bad template fails loudly on its first render, instead of mail being blocked for days.</span></li>
+      </ul>
+    </section>
+
+    <!-- NEXT -->
+    <section class="section" id="next" aria-labelledby="h-next">
+      <h2 id="h-next">What&rsquo;s next</h2>
+      <p class="intro">What the tests can&rsquo;t prove without a real AWS account.</p>
+      <ul class="stations">
+        <li><strong>A live deployment</strong><span>SES sending and its EventBridge events, end to end, against a verified domain.</span></li>
+        <li><strong>KMS key policies at run time</strong><span>CDK assertions check the policies; only a deployment proves every function can use them.</span></li>
+        <li><strong>Scheduler failures to the encrypted DLQ</strong><span>Tested in synthesis, not yet observed on AWS.</span></li>
+      </ul>
+    </section>
+
+    <!-- CONTACT -->
+    <section class="contact" id="contact" aria-labelledby="h-contact">
+      <h2 id="h-contact">Sending mail that has to arrive exactly once?</h2>
+      <p>I design and build systems like this one. If you are hiring, or have a problem that looks like it, I&rsquo;d like to hear about it.</p>
+      <ul class="contact-list">
+        <li><a href="mailto:the3ma@gmail.com"><small>Email</small><b>the3ma@gmail.com</b></a></li>
+        <li><a href="https://www.linkedin.com/in/hristo-atanasov-84a525175/"><small>LinkedIn</small><b>Hristo Atanasov</b></a></li>
+        <li><a href="https://github.com/the3ma"><small>GitHub</small><b>github.com/the3ma</b></a></li>
+      </ul>
+    </section>
+  </article>
+</div>
+</main>
+
+<footer class="site">
+  <div class="wrap"><p>A composite of problems met in production systems: no employer, client or product is named, and details and numbers are changed. Source code under the MIT licence at <a href="https://github.com/the3ma/reliable-email-delivery">github.com/the3ma/reliable-email-delivery</a>.</p></div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var media = window.matchMedia('(prefers-color-scheme: light)');
+    var btn = document.getElementById('theme-toggle');
+    var label = btn.querySelector('.label');
+    function isDark() { var t = root.getAttribute('data-theme'); return t ? t === 'dark' : !media.matches; }
+    function render() {
+      var dark = isDark();
+      root.setAttribute('data-resolved', dark ? 'dark' : 'light');
+      label.textContent = dark ? 'Light theme' : 'Dark theme';
+      btn.setAttribute('aria-pressed', String(!dark));
+      btn.setAttribute('aria-label', dark ? 'Switch to the light theme' : 'Switch to the dark theme');
+    }
+    btn.addEventListener('click', function () {
+      var next = isDark() ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch (e) {}
+      render();
+    });
+    media.addEventListener('change', render);
+    render();
+
+    // Progress bar + the rail as a transit line: stations passed, current station, line fill.
+    var bar = document.querySelector('.progress');
+    var rail = document.querySelector('.toc ol');
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+    var mlinks = Array.prototype.slice.call(document.querySelectorAll('.toc-mobile a'));
+    var mcurrent = document.querySelector('.toc-current');
+    var sections = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+    var current = null, ticking = false;
+    function update() {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      bar.style.transform = 'scaleX(' + (max > 0 ? Math.min(1, window.scrollY / max) : 0) + ')';
+      var active = -1;
+      for (var i = 0; i < sections.length; i++) { if (sections[i] && sections[i].getBoundingClientRect().top <= 140) active = i; }
+      var last = sections[sections.length - 1];
+      if ((max > 0 && window.scrollY >= max - 2) || (last && last.getBoundingClientRect().top < window.innerHeight * 0.6)) active = sections.length - 1;
+      if (active !== current) {
+        [links, mlinks].forEach(function (list) {
+          list.forEach(function (a, j) {
+            if (j === active) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+            a.classList.toggle('passed', j < active);
+          });
+        });
+        if (mcurrent) mcurrent.textContent = active > -1 ? links[active].textContent : '';
+        if (rail) {
+          var fill = 0;
+          if (active > -1 && links[active].offsetParent) {
+            var dot = links[active].getBoundingClientRect(), top = rail.getBoundingClientRect();
+            fill = Math.max(0, dot.top + dot.height / 2 - top.top - 12);
+          }
+          rail.style.setProperty('--fill', fill + 'px');
+        }
+        current = active;
+      }
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+    window.addEventListener('resize', function () { current = null; update(); });
+    update();
+    var mobile = document.querySelector('.toc-mobile');
+    if (mobile) mobile.addEventListener('click', function (e) { if (e.target.closest('a')) mobile.removeAttribute('open'); });
+  })();
+</script>
+</body>
+</html>
