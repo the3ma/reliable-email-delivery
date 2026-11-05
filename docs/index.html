@@ -252,7 +252,6 @@
       <p class="intro">A local Delivery Console makes the guarantees visible: run a scenario, watch deliveries move through their states, open the e-mail each one produced.</p>
       <figure class="shot">
         <picture>
-          <source media="(max-width: 560px)" srcset="screenshots/06-mobile-dark.png" width="375" height="812">
           <img src="screenshots/01-dashboard.png" width="1440" height="900" loading="lazy" decoding="async" alt="Delivery Console dashboard: deliveries counted by state (sent, skipped, released, claimed, failed, ambiguous), the kill switch, skip reasons and queue depths.">
         </picture>
         <figcaption><p>The dashboard over the local stack (<code>make demo</code>). The console runs only against LocalStack and Mailpit and is never deployed; in AWS the same facts live in DynamoDB, CloudWatch and SES.</p></figcaption>
