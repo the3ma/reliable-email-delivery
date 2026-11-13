@@ -12,7 +12,7 @@ ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build
 
 # ---- serve (default): nginx as a non-root user, SPA fallback, /api proxy ----
-FROM nginx:1.29-alpine AS serve
+FROM nginx:1.31-alpine AS serve
 # host:port of console-api; resolved per request through Docker's embedded DNS.
 ENV API_UPSTREAM=console-api:3001 \
     DNS_RESOLVER=127.0.0.11
